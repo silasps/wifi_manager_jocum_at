@@ -74,7 +74,7 @@ function planDiscountHint(category: Category, plan: Plan, amount: string) {
   const tempo = Number(amount || 0);
 
   if (plan === "Diário") {
-    if (!tempo) return "pacote curto a partir de 15 dias";
+    if (!tempo) return "desconto a partir de 15 dias";
     if (tempo >= 20) return "curta temporada R$ 50";
     if (tempo >= 15) return "curta temporada R$ 40";
     return "desconto a partir de 15 dias";
