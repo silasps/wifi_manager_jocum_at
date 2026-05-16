@@ -15,9 +15,14 @@ npm install
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://xptkrsbjyyslbgurfvbg.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_pYxXJES07IMdRM9ULLc7fQ_HD07JiGo
-NEXT_PUBLIC_PIX_COPIA_COLA=seu_codigo_pix_copia_e_cola
-NEXT_PUBLIC_PIX_QR_IMAGE_URL=/caminho-ou-url-do-qr-code.png
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+ASAAS_API_KEY=sua_chave_api_do_asaas
+ASAAS_API_URL=https://api.asaas.com/v3
+ASAAS_DUE_DATE_LIMIT_DAYS=3
+ASAAS_MAX_INSTALLMENTS=1
 ```
+
+Para testar no sandbox do Asaas, use `ASAAS_API_URL=https://api-sandbox.asaas.com/v3` e uma chave gerada na conta sandbox.
 
 3. Inicie em desenvolvimento:
 
