@@ -77,11 +77,6 @@ export default function TermsPage() {
   }, []);
 
   const goBack = () => {
-    if (window.history.length > 1) {
-      router.back();
-      return;
-    }
-
     router.push("/");
   };
 
