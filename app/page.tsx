@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { supabase } from "../utils/supabase/client";
 
 type Tab = "login" | "signup";
@@ -33,7 +33,11 @@ const ddiOptions: DdiOption[] = [
   { code: "+598", flag: "🇺🇾", country: "Uruguai", maxDigits: 8, groups: [4, 4] },
 ];
 const categories: Category[] = ["Obreiro", "Aluno", "Casal", "Ministério"];
-const plans: Plan[] = ["Diário", "Mensal", "Anual"];
+const accessPlans: Array<{ value: Exclude<Plan, "">; title: string; description: string; unit: string }> = [
+  { value: "Diário", title: "Por dias", description: "Para visitas e períodos curtos", unit: "dias" },
+  { value: "Mensal", title: "Por meses", description: "Para uma temporada na base", unit: "meses" },
+  { value: "Anual", title: "Por anos", description: "Para acesso de longo prazo", unit: "anos" },
+];
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -42,6 +46,78 @@ function timeLabel(plan: Plan, amount: string) {
   if (plan === "Diário") return value === 1 ? "1 dia" : `${value} dias`;
   if (plan === "Anual") return value === 1 ? "1 ano" : `${value} anos`;
   return value === 1 ? "1 mês" : `${value} meses`;
+}
+
+function durationLabel(plan: Plan) {
+  if (plan === "Diário") return "Quantos dias de acesso?";
+  if (plan === "Anual") return "Quantos anos de acesso?";
+  if (plan === "Mensal") return "Quantos meses de acesso?";
+  return "Duração do acesso";
+}
+
+function durationUnit(plan: Plan) {
+  return accessPlans.find((item) => item.value === plan)?.unit ?? "tempo";
+}
+
+function dailyUnitValue(category: Category) {
+  return category === "Casal" ? 5 : 3;
+}
+
+function dailySeasonPrice(days: number, category: Category) {
+  const full = days * dailyUnitValue(category);
+  if (days >= 20) return Math.min(full, 50);
+  if (days >= 15) return Math.min(full, 40);
+  return full;
+}
+
+function planDiscountHint(category: Category, plan: Plan, amount: string) {
+  const tempo = Number(amount || 0);
+
+  if (plan === "Diário") {
+    if (!tempo) return "pacote curto a partir de 15 dias";
+    if (tempo >= 20) return "curta temporada R$ 50";
+    if (tempo >= 15) return "curta temporada R$ 40";
+    return "pacote curto a partir de 15 dias";
+  }
+  if (plan === "Anual") return category === "Ministério" ? "25% off na base" : "10% off";
+  if (plan !== "Mensal") return "";
+
+  if (category === "Ministério") {
+    if (!tempo) return "20% off a partir de 3 meses";
+    if (tempo >= 12) return "25% off na base";
+    if (tempo >= 3) return "20% off na base";
+    return "20% off a partir de 3 meses";
+  }
+
+  if (category === "Casal") {
+    if (!tempo) return "10% off a partir de 3 meses";
+    if (tempo === 3) return "pacote com desconto";
+    if (tempo > 3) return "10% off";
+    return "10% off a partir de 3 meses";
+  }
+
+  if (category === "Aluno" || category === "Obreiro") {
+    if (!tempo) return "10% off a partir de 3 meses";
+    if (tempo === 3) return "R$ 10 off";
+    if (tempo > 3) return "10% off";
+    return "10% off a partir de 3 meses";
+  }
+
+  return category ? "10% off a partir de 3 meses" : "Selecione categoria";
+}
+
+function planUnitValue(category: Category, plan: Plan) {
+  if (plan === "Diário") return `${money.format(dailyUnitValue(category))} / dia`;
+  if (plan === "Anual") {
+    if (category === "Ministério") return `${money.format(50 * 12 * 0.75)} / ano base`;
+    if (category === "Aluno") return `${money.format(35 * 12 * 0.9)} / ano`;
+    if (category === "Casal") return `${money.format(50 * 12 * 0.9)} / ano`;
+    return `${money.format(30 * 12 * 0.9)} / ano`;
+  }
+
+  if (category === "Aluno") return `${money.format(35)} / mês`;
+  if (category === "Casal" || category === "Ministério") return `${money.format(50)} / mês`;
+  return `${money.format(30)} / mês`;
 }
 
 function planPrice(category: Category, plan: Plan, amount: string, people: string) {
@@ -54,8 +130,8 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
   if (!category || !plan || !tempo) return { original, final, discount: 0 };
 
   if (plan === "Diário") {
-    original = tempo * 4;
-    final = original;
+    original = tempo * dailyUnitValue(category);
+    final = dailySeasonPrice(tempo, category);
   } else if (plan === "Mensal") {
     if (category === "Aluno") original = tempo * 35;
     if (category === "Obreiro") original = tempo * 30;
@@ -112,6 +188,63 @@ function formatGroupedPhone(value: string, ddi: string) {
   return groups.join(" ");
 }
 
+function PasswordVisibilityIcon({ visible }: { visible: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="3" />
+      {!visible && <path d="M4 4l16 16" />}
+    </svg>
+  );
+}
+
+function PlanSummary({
+  amount,
+  category,
+  checklist,
+  packageReady,
+  plan,
+  price,
+}: {
+  amount: string;
+  category: Category;
+  checklist: Array<{ label: string; pending: string; done: boolean }>;
+  packageReady: boolean;
+  plan: Plan;
+  price: { original: number; final: number; discount: number };
+}) {
+  return (
+    <aside className="package-summary" aria-label="Resumo do pacote">
+      <div>
+        <p>Resumo do plano</p>
+        <ul>
+          {checklist.map((item) => (
+            <li className={item.done ? "done" : ""} key={item.label}>
+              <span>{item.done ? "✓" : "○"}</span>
+              {item.done ? item.label : item.pending}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        {packageReady ? (
+          <>
+            {price.discount > 0 && <span className="old-price">{money.format(price.original)}</span>}
+            <strong>{money.format(price.final)}</strong>
+            <span>{price.discount > 0 ? `Desconto de ${money.format(price.discount)}` : "Sem desconto neste plano"}</span>
+            <small>{category} · {timeLabel(plan, amount)}</small>
+          </>
+        ) : (
+          <>
+            <strong>--</strong>
+            <span>Complete os itens para ver o valor</span>
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 export default function Home() {
   const [tab, setTab] = useState<Tab>("login");
   const [loginEmail, setLoginEmail] = useState("");
@@ -132,7 +265,9 @@ export default function Home() {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [emailChecking, setEmailChecking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const signupEmailRef = useRef<HTMLInputElement>(null);
 
   const amount = signup.time || "1";
   const packageReady = Boolean(signup.category && signup.plan && signup.time);
@@ -141,9 +276,9 @@ export default function Home() {
     [signup.category, signup.plan, amount, signup.ministryPeople],
   );
   const checklist = [
-    { label: "Categoria", done: Boolean(signup.category) },
-    { label: "Tipo de cobrança", done: Boolean(signup.plan) },
-    { label: "Tempo", done: Boolean(signup.time) },
+    { label: "Categoria", pending: "Selecione categoria", done: Boolean(signup.category) },
+    { label: "Tempo de acesso", pending: "Escolha o tempo de acesso", done: Boolean(signup.plan) },
+    { label: "Duração", pending: "Informe a duração", done: Boolean(signup.time) },
   ];
 
   const updateSignup = (field: keyof typeof signup, value: string | boolean) => {
@@ -191,6 +326,43 @@ export default function Home() {
     setMessage(error ? "Não foi possível enviar a recuperação agora." : "Enviamos as instruções para o seu email.");
   };
 
+  const focusSignupEmail = () => window.setTimeout(() => signupEmailRef.current?.focus(), 0);
+
+  const validateSignupEmail = async (showAlert = true) => {
+    const email = signup.email.trim();
+    if (!email) return false;
+
+    if (!isValidEmail(email)) {
+      setMessage("Informe um email válido.");
+      if (showAlert) window.alert("Email inválido. Ajuste o email para continuar.");
+      focusSignupEmail();
+      return false;
+    }
+
+    setEmailChecking(true);
+    let result: { valid?: boolean; reason?: string } = {};
+    let ok = false;
+    try {
+      const response = await fetch(`/api/validate-email?email=${encodeURIComponent(email)}`);
+      result = (await response.json()) as { valid?: boolean; reason?: string };
+      ok = response.ok;
+    } catch {
+      result.reason = "Não foi possível validar o email agora.";
+    } finally {
+      setEmailChecking(false);
+    }
+
+    if (!ok || !result.valid) {
+      const text = result.reason ?? "Email inválido ou domínio sem recebimento de email.";
+      setMessage(text);
+      if (showAlert) window.alert(text);
+      focusSignupEmail();
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSignup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
@@ -202,8 +374,8 @@ export default function Home() {
       [!signup.name.trim(), "Informe o nome para o cadastro."],
       [signup.category === "Ministério" && !signup.ministryPeople, "Informe quantas pessoas usarão o acesso."],
       [!onlyDigits(signup.phone), "Informe um telefone."],
-      [!signup.plan, "Escolha o tipo de cobrança."],
-      [!signup.time, "Defina o tempo de uso."],
+      [!signup.plan, "Escolha o tempo de acesso desejado."],
+      [!signup.time, "Informe a duração do acesso."],
       [!isValidEmail(signup.email.trim()), "Informe um email válido."],
       [!signup.password, "Defina uma senha."],
       [signup.password !== signup.confirmPassword, "As senhas precisam ser iguais."],
@@ -212,6 +384,16 @@ export default function Home() {
 
     if (invalid) {
       setMessage(String(invalid[1]));
+      if (invalid[1] === "Informe um email válido.") {
+        window.alert("Email inválido. Ajuste o email para continuar.");
+        focusSignupEmail();
+      }
+      setLoading(false);
+      return;
+    }
+
+    if (!(await validateSignupEmail(false))) {
+      window.alert("Email inválido. Ajuste o email para continuar.");
       setLoading(false);
       return;
     }
@@ -295,11 +477,11 @@ export default function Home() {
                     required
                   />
                   <button type="button" onClick={() => setShowLoginPassword((value) => !value)} aria-label={showLoginPassword ? "Ocultar senha" : "Mostrar senha"}>
-                    {showLoginPassword ? "Ocultar" : "Mostrar"}
+                    <PasswordVisibilityIcon visible={showLoginPassword} />
                   </button>
                 </span>
               </label>
-              <button className="primary-button" type="submit" disabled={loading}>
+              <button className="primary-button" type="submit" disabled={loading || emailChecking}>
                 {loading ? "Entrando..." : "Entrar"}
               </button>
               <button className="link-button" type="button" onClick={handleResetPassword} disabled={loading}>
@@ -359,29 +541,69 @@ export default function Home() {
 
               {signup.category === "Ministério" && (
                 <label>
-                  Pessoas que vão utilizar o Wi-Fi
+                  Quantas pessoas vão utilizar o Wi-Fi
                   <input value={signup.ministryPeople} onChange={(event) => updateSignup("ministryPeople", onlyDigits(event.target.value).slice(0, 3))} inputMode="numeric" required />
                 </label>
               )}
 
-              <label>
-                Tipo de cobrança
-                <select value={signup.plan} onChange={(event) => updateSignup("plan", event.target.value as Plan)} required>
-                  <option value="">Selecione</option>
-                  {plans.map((plan) => (
-                    <option key={plan}>{plan}</option>
-                  ))}
-                </select>
-              </label>
+              <fieldset className="access-period">
+                <legend>Tempo de acesso desejado</legend>
+                <div className="billing-options" role="radiogroup" aria-label="Tempo de acesso desejado">
+                  {accessPlans.map((plan) => {
+                    const hint = planDiscountHint(signup.category, plan.value, signup.time);
+
+                    return (
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={signup.plan === plan.value}
+                        className={signup.plan === plan.value ? "plan-option selected" : "plan-option"}
+                        key={plan.value}
+                        onClick={() => updateSignup("plan", plan.value)}
+                      >
+                        {hint && <em className="discount-badge">{hint}</em>}
+                        <strong>{plan.title}</strong>
+                        <small className="unit-price">{planUnitValue(signup.category, plan.value)}</small>
+                        <span>{plan.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
 
               <label>
-                {signup.plan === "Diário" ? "Quantos dias?" : signup.plan === "Anual" ? "Quantos anos?" : "Quantos meses?"}
-                <input value={signup.time} onChange={(event) => updateSignup("time", onlyDigits(event.target.value).slice(0, 3))} inputMode="numeric" required />
+                {durationLabel(signup.plan)}
+                <span className="duration-input">
+                  <input
+                    value={signup.time}
+                    onChange={(event) => updateSignup("time", onlyDigits(event.target.value).slice(0, 3))}
+                    inputMode="numeric"
+                    disabled={!signup.plan}
+                    required
+                  />
+                  <span>{durationUnit(signup.plan)}</span>
+                </span>
               </label>
+
+              <PlanSummary amount={amount} category={signup.category} checklist={checklist} packageReady={packageReady} plan={signup.plan} price={price} />
+
+              <div className="form-divider" role="separator">
+                <span>Dados de acesso</span>
+              </div>
 
               <label>
                 Email
-                <input value={signup.email} onChange={(event) => updateSignup("email", event.target.value)} type="email" autoComplete="email" required />
+                <input
+                  ref={signupEmailRef}
+                  value={signup.email}
+                  onBlur={() => {
+                    if (signup.email.trim()) void validateSignupEmail();
+                  }}
+                  onChange={(event) => updateSignup("email", event.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  required
+                />
               </label>
 
               <label>
@@ -389,7 +611,7 @@ export default function Home() {
                 <span className="password-field">
                   <input value={signup.password} onChange={(event) => updateSignup("password", event.target.value)} type={showSignupPassword ? "text" : "password"} autoComplete="new-password" required />
                   <button type="button" onClick={() => setShowSignupPassword((value) => !value)} aria-label={showSignupPassword ? "Ocultar senha" : "Mostrar senha"}>
-                    {showSignupPassword ? "Ocultar" : "Mostrar"}
+                    <PasswordVisibilityIcon visible={showSignupPassword} />
                   </button>
                 </span>
               </label>
@@ -405,50 +627,19 @@ export default function Home() {
                     required
                   />
                   <button type="button" onClick={() => setShowConfirmPassword((value) => !value)} aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}>
-                    {showConfirmPassword ? "Ocultar" : "Mostrar"}
+                    <PasswordVisibilityIcon visible={showConfirmPassword} />
                   </button>
                 </span>
               </label>
 
-              <button className="primary-button" type="submit" disabled={loading}>
-                {loading ? "Validando..." : "Seguinte"}
+              <button className="primary-button" type="submit" disabled={loading || emailChecking}>
+                {loading || emailChecking ? "Validando..." : "Seguinte"}
               </button>
             </form>
           )}
 
           {message && <p className="status-message">{message}</p>}
         </div>
-
-        {tab === "signup" && (
-          <aside className="package-summary" aria-label="Resumo do pacote">
-            <div>
-              <p>Resumo do plano</p>
-              <ul>
-                {checklist.map((item) => (
-                  <li className={item.done ? "done" : ""} key={item.label}>
-                    <span>{item.done ? "✓" : "○"}</span>
-                    {item.done ? item.label : `Selecione ${item.label.toLowerCase()}`}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              {packageReady ? (
-                <>
-                  {price.discount > 0 && <span className="old-price">{money.format(price.original)}</span>}
-                  <strong>{money.format(price.final)}</strong>
-                  <span>{price.discount > 0 ? `Desconto de ${money.format(price.discount)}` : "Sem desconto neste plano"}</span>
-                  <small>{signup.category} · {timeLabel(signup.plan, amount)}</small>
-                </>
-              ) : (
-                <>
-                  <strong>--</strong>
-                  <span>Complete os itens para ver o valor</span>
-                </>
-              )}
-            </div>
-          </aside>
-        )}
       </section>
     </main>
   );

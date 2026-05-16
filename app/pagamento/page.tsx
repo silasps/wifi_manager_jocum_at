@@ -26,6 +26,14 @@ type AsaasPaymentLink = {
   url: string;
 };
 
+type PaymentMethod = "PIX" | "BOLETO" | "CREDIT_CARD";
+
+const paymentMethods: Array<{ label: string; value: PaymentMethod }> = [
+  { label: "Pix", value: "PIX" },
+  { label: "Boleto", value: "BOLETO" },
+  { label: "Cartão de crédito", value: "CREDIT_CARD" },
+];
+
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 function createPaymentReference() {
@@ -38,6 +46,7 @@ export default function PaymentPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -157,6 +166,7 @@ export default function PaymentPage() {
         tempo: payload.tempo,
         valor: payload.valor,
         qtd_pessoas_ministerio: payload.qtd_pessoas_ministerio,
+        paymentMethod,
       }),
     });
 
@@ -237,9 +247,17 @@ export default function PaymentPage() {
                 </div>
 
                 <div className="asaas-options" aria-label="Formas de pagamento disponíveis">
-                  <span>Pix</span>
-                  <span>Boleto</span>
-                  <span>Cartão de crédito</span>
+                  {paymentMethods.map((method) => (
+                    <button
+                      aria-pressed={paymentMethod === method.value}
+                      className={paymentMethod === method.value ? "active" : ""}
+                      key={method.value}
+                      onClick={() => setPaymentMethod(method.value)}
+                      type="button"
+                    >
+                      {method.label}
+                    </button>
+                  ))}
                 </div>
 
                 <p className="tiny-note">O pagamento abre no ambiente seguro do Asaas. O cadastro fica pendente até a confirmação.</p>
@@ -248,7 +266,7 @@ export default function PaymentPage() {
               {message && <p className="status-message">{message}</p>}
 
               <button className="primary-button finish-button" disabled={loading} onClick={startAsaasPayment} type="button">
-                {loading ? "Abrindo Asaas..." : "Pagar com Asaas"}
+                {loading ? "Abrindo..." : "Pagar"}
               </button>
             </>
           ) : (

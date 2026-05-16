@@ -16,13 +16,13 @@ npm install
 NEXT_PUBLIC_SUPABASE_URL=https://xptkrsbjyyslbgurfvbg.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_pYxXJES07IMdRM9ULLc7fQ_HD07JiGo
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-ASAAS_API_KEY=sua_chave_api_do_asaas
+ASAAS_API_KEY=\$sua_chave_api_do_asaas
 ASAAS_API_URL=https://api.asaas.com/v3
 ASAAS_DUE_DATE_LIMIT_DAYS=3
 ASAAS_MAX_INSTALLMENTS=1
 ```
 
-Para testar no sandbox do Asaas, use `ASAAS_API_URL=https://api-sandbox.asaas.com/v3` e uma chave gerada na conta sandbox.
+Se a chave do Asaas começar com `$`, mantenha a barra invertida antes dele (`\$`) para o Next.js não interpretar como variável. Para testar no sandbox do Asaas, use `ASAAS_API_URL=https://api-sandbox.asaas.com/v3` e uma chave gerada na conta sandbox.
 
 3. Inicie em desenvolvimento:
 

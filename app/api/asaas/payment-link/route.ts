@@ -10,6 +10,7 @@ type PaymentRequest = {
   tempo?: string;
   valor?: number;
   qtd_pessoas_ministerio?: number;
+  paymentMethod?: "PIX" | "BOLETO" | "CREDIT_CARD";
 };
 
 type AsaasErrorResponse = {
@@ -66,7 +67,9 @@ export async function POST(request: Request) {
 
   const dueDateLimitDays = Math.max(1, Number(process.env.ASAAS_DUE_DATE_LIMIT_DAYS || 3));
   const maxInstallments = Math.min(21, Math.max(1, Number(process.env.ASAAS_MAX_INSTALLMENTS || 1)));
-  const chargeType = maxInstallments > 1 ? "INSTALLMENT" : "DETACHED";
+  const allowedPaymentMethods = ["PIX", "BOLETO", "CREDIT_CARD"];
+  const billingType = allowedPaymentMethods.includes(payload.paymentMethod || "") ? payload.paymentMethod : "PIX";
+  const chargeType = billingType === "CREDIT_CARD" && maxInstallments > 1 ? "INSTALLMENT" : "DETACHED";
   const descriptionParts = [
     payload.categoria,
     payload.tempo,
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
     name: `Wi-Fi JOCUM AT - ${payload.nome}`.slice(0, 100),
     description: descriptionParts.join(" | ").slice(0, 500),
     value,
-    billingType: "UNDEFINED",
+    billingType,
     chargeType,
     dueDateLimitDays,
     maxInstallmentCount: maxInstallments > 1 ? maxInstallments : undefined,
