@@ -6,6 +6,7 @@ type PixRequest = {
   email?: string;
   whatsApp?: string;
   valor?: number;
+  cpf?: string;
 };
 
 type AsaasErrorBody = {
@@ -33,7 +34,13 @@ async function readError(res: Response) {
   }
 }
 
-async function findOrCreateCustomer(apiKey: string, nome: string, email: string, whatsApp?: string) {
+function cleanPhone(raw?: string): string {
+  let p = (raw || "").replace(/\D/g, "");
+  if (p.startsWith("55") && p.length > 11) p = p.slice(2);
+  return p.slice(0, 11);
+}
+
+async function findOrCreateCustomer(apiKey: string, nome: string, email: string, whatsApp?: string, cpf?: string) {
   const base = getAsaasApiUrl();
   const headers = asaasHeaders(apiKey);
 
@@ -43,9 +50,11 @@ async function findOrCreateCustomer(apiKey: string, nome: string, email: string,
     if (body.data?.[0]?.id) return body.data[0].id;
   }
 
-  const phone = whatsApp?.replace(/\D/g, "").slice(0, 11);
+  const phone = cleanPhone(whatsApp);
+  const cleanCpf = cpf?.replace(/\D/g, "");
   const customerBody: Record<string, unknown> = { name: nome.slice(0, 100), email: email.trim(), notificationDisabled: false };
   if (phone && phone.length >= 10) customerBody.mobilePhone = phone;
+  if (cleanCpf && cleanCpf.length >= 11) customerBody.cpfCnpj = cleanCpf;
 
   const createRes = await fetch(`${base}/customers`, { method: "POST", headers, body: JSON.stringify(customerBody) });
   if (createRes.ok) {
@@ -54,7 +63,8 @@ async function findOrCreateCustomer(apiKey: string, nome: string, email: string,
   }
 
   // Retry without phone if first attempt failed
-  const retryBody = { name: nome.slice(0, 100), email: email.trim(), notificationDisabled: false };
+  const retryBody: Record<string, unknown> = { name: nome.slice(0, 100), email: email.trim(), notificationDisabled: false };
+  if (cleanCpf && cleanCpf.length >= 11) retryBody.cpfCnpj = cleanCpf;
   const retryRes = await fetch(`${base}/customers`, { method: "POST", headers, body: JSON.stringify(retryBody) });
   if (!retryRes.ok) throw new Error(await readError(retryRes));
 
@@ -83,7 +93,8 @@ export async function POST(request: Request) {
     const base = getAsaasApiUrl();
     const headers = asaasHeaders(apiKey);
 
-    const customerId = await findOrCreateCustomer(apiKey, payload.nome, payload.email, payload.whatsApp);
+    const customerId = process.env.ASAAS_DEFAULT_CUSTOMER_ID
+      || await findOrCreateCustomer(apiKey, payload.nome, payload.email, payload.whatsApp, payload.cpf);
 
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 1);

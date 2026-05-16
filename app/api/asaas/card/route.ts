@@ -25,16 +25,24 @@ async function readErr(res: Response) {
   } catch { return "Erro no Asaas."; }
 }
 
-async function findOrCreateCustomer(k: string, nome: string, email: string, phone?: string) {
+function cleanPhone(raw?: string): string {
+  let p = (raw || "").replace(/\D/g, "");
+  if (p.startsWith("55") && p.length > 11) p = p.slice(2);
+  return p.slice(0, 11);
+}
+
+async function findOrCreateCustomer(k: string, nome: string, email: string, phone?: string, cpf?: string) {
   const h = H(k);
   const s = await fetch(`${BASE()}/customers?email=${encodeURIComponent(email)}&limit=1`, { headers: h });
   if (s.ok) {
     const d = (await s.json()) as { data?: Array<{ id: string }> };
     if (d.data?.[0]?.id) return d.data[0].id;
   }
-  const p = phone?.replace(/\D/g, "").slice(0, 11);
+  const p = cleanPhone(phone);
+  const cleanCpf = cpf?.replace(/\D/g, "");
   const body: Record<string, unknown> = { name: nome.slice(0, 100), email: email.trim() };
   if (p && p.length >= 10) body.mobilePhone = p;
+  if (cleanCpf && cleanCpf.length >= 11) body.cpfCnpj = cleanCpf;
   const r = await fetch(`${BASE()}/customers`, { method: "POST", headers: h, body: JSON.stringify(body) });
   if (!r.ok) throw new Error(await readErr(r));
   const d = (await r.json()) as { id?: string };
@@ -59,7 +67,7 @@ export async function POST(request: Request) {
   if (!expMonth || !expYearShort) return NextResponse.json({ error: "Validade inválida." }, { status: 400 });
 
   try {
-    const customerId = await findOrCreateCustomer(apiKey, p.nome, p.email, p.whatsApp);
+    const customerId = await findOrCreateCustomer(apiKey, p.nome, p.email, p.whatsApp, p.cpf);
     const today = new Date().toISOString().split("T")[0];
 
     const res = await fetch(`${BASE()}/payments`, {

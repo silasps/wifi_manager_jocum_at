@@ -528,7 +528,7 @@ export default function PaymentPage() {
                     </button>
                   ))}
                 </div>
-                
+
               </section>
 
               {message && <p className="status-message">{message}</p>}
