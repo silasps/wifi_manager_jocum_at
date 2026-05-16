@@ -119,7 +119,7 @@ export async function POST(request: Request) {
     if (!charge.id) return NextResponse.json({ error: "Asaas não retornou ID da cobrança." }, { status: 502 });
 
     const qrRes = await fetch(`${base}/payments/${charge.id}/pixQrCode`, { headers });
-    if (!qrRes.ok) return NextResponse.json({ error: "Não foi possível obter o QR Code PIX." }, { status: 502 });
+    if (!qrRes.ok) return NextResponse.json({ error: `QR Code PIX: ${await readError(qrRes)}` }, { status: 502 });
 
     const qr = (await qrRes.json()) as { encodedImage?: string; payload?: string; expirationDate?: string };
 
