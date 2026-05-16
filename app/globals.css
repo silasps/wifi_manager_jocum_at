@@ -188,6 +188,7 @@ input[type="checkbox"] {
 
 select {
   appearance: auto;
+  height: 50px;
 }
 
 input::placeholder {
