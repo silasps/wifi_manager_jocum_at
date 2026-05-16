@@ -528,12 +528,7 @@ export default function PaymentPage() {
                     </button>
                   ))}
                 </div>
-
-                <p className="tiny-note">
-                  {paymentMethod === "PIX"
-                    ? "O QR Code vai aparecer aqui mesmo. Nenhum redirecionamento."
-                    : "O pagamento abre no ambiente seguro do Asaas. O cadastro é criado após a confirmação do pagamento."}
-                </p>
+                
               </section>
 
               {message && <p className="status-message">{message}</p>}

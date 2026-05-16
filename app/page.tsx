@@ -288,7 +288,7 @@ export default function Home() {
         next.name = "";
         next.ministryPeople = "";
       }
-      if (field === "plan") next.time = "";
+      if (field === "plan") next.time = value === "Diário" ? "2" : "";
       return next;
     });
   };
@@ -578,6 +578,9 @@ export default function Home() {
                   <input
                     value={signup.time}
                     onChange={(event) => updateSignup("time", onlyDigits(event.target.value).slice(0, 3))}
+                    onBlur={() => {
+                      if (signup.plan === "Diário" && Number(signup.time) < 2) updateSignup("time", "2");
+                    }}
                     inputMode="numeric"
                     min={signup.plan === "Diário" ? 2 : 1}
                     disabled={!signup.plan}
