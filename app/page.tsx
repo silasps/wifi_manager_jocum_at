@@ -376,6 +376,7 @@ export default function Home() {
       [!onlyDigits(signup.phone), "Informe um telefone."],
       [!signup.plan, "Escolha o tempo de acesso desejado."],
       [!signup.time, "Informe a duração do acesso."],
+      [signup.plan === "Diário" && Number(signup.time) < 2, "O plano diário aceita no mínimo 2 dias."],
       [!isValidEmail(signup.email.trim()), "Informe um email válido."],
       [!signup.password, "Defina uma senha."],
       [signup.password !== signup.confirmPassword, "As senhas precisam ser iguais."],
@@ -578,6 +579,7 @@ export default function Home() {
                     value={signup.time}
                     onChange={(event) => updateSignup("time", onlyDigits(event.target.value).slice(0, 3))}
                     inputMode="numeric"
+                    min={signup.plan === "Diário" ? 2 : 1}
                     disabled={!signup.plan}
                     required
                   />
