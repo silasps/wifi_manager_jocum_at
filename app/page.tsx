@@ -77,7 +77,7 @@ function planDiscountHint(category: Category, plan: Plan, amount: string) {
     if (!tempo) return "pacote curto a partir de 15 dias";
     if (tempo >= 20) return "curta temporada R$ 50";
     if (tempo >= 15) return "curta temporada R$ 40";
-    return "pacote curto a partir de 15 dias";
+    return "desconto a partir de 15 dias";
   }
   if (plan === "Anual") return category === "Ministério" ? "25% off na base" : "10% off";
   if (plan !== "Mensal") return "";
