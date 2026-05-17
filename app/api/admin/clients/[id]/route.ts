@@ -5,24 +5,37 @@ async function requireAdmin(request: Request) {
   const token = request.headers.get("Authorization")?.replace("Bearer ", "");
   if (!token) return null;
 
-  const admin = createAdminClient();
-  const { data: { user }, error } = await admin.auth.getUser(token);
-  if (error || !user) return null;
+  try {
+    const admin = createAdminClient();
+    const { data: { user }, error } = await admin.auth.getUser(token);
+    if (error || !user) return null;
 
-  const { data: cliente } = await admin
-    .from("clientes")
-    .select("papel")
-    .eq("user_id", user.id)
-    .maybeSingle();
+    const { data: cliente } = await admin
+      .from("clientes")
+      .select("papel")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-  if (!cliente?.papel || cliente.papel === "user") return null;
-  return user;
+    if (!cliente?.papel || cliente.papel === "user") return null;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+function missingKey() {
+  return NextResponse.json(
+    { error: "Configuração do servidor incompleta: SUPABASE_SERVICE_ROLE_KEY ausente." },
+    { status: 500 },
+  );
 }
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return missingKey();
+
   const user = await requireAdmin(request);
   if (!user) return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
 
@@ -48,6 +61,8 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return missingKey();
+
   const user = await requireAdmin(request);
   if (!user) return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
 

@@ -271,6 +271,12 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [recoverModal, setRecoverModal] = useState(false);
+  const [recoverEmail, setRecoverEmail] = useState("");
+  const [recoverLoading, setRecoverLoading] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+  const [recoveredPassword, setRecoveredPassword] = useState<string | null>(null);
+  const [passwordCopied, setPasswordCopied] = useState(false);
   const signupEmailRef = useRef<HTMLInputElement>(null);
 
   const amount = signup.time || "1";
@@ -316,18 +322,32 @@ export default function Home() {
     window.location.href = "/home";
   };
 
-  const handleResetPassword = async () => {
-    if (!loginEmail.trim()) {
-      setMessage("Digite seu email antes de recuperar a senha.");
+  const openRecoverModal = () => {
+    setRecoverEmail(loginEmail.trim());
+    setRecoveredPassword(null);
+    setRecoverError(null);
+    setPasswordCopied(false);
+    setRecoverModal(true);
+    if (loginEmail.trim()) void fetchPassword(loginEmail.trim());
+  };
+
+  const fetchPassword = async (email: string) => {
+    setRecoverLoading(true);
+    setRecoverError(null);
+    const response = await fetch(`/api/recover-password?email=${encodeURIComponent(email.trim())}`);
+    const result = await response.json() as { senha?: string; error?: string };
+    setRecoverLoading(false);
+    if (!response.ok || !result.senha) {
+      setRecoverError(result.error ?? "Não foi possível encontrar o cadastro.");
       return;
     }
+    setRecoveredPassword(result.senha);
+  };
 
-    setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(loginEmail.trim(), {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    setLoading(false);
-    setMessage(error ? "Não foi possível enviar a recuperação agora." : "Enviamos as instruções para o seu email.");
+  const closeRecoverModal = () => {
+    setRecoverModal(false);
+    setRecoveredPassword(null);
+    setRecoverError(null);
   };
 
   const focusSignupEmail = () => window.setTimeout(() => signupEmailRef.current?.focus(), 0);
@@ -489,7 +509,7 @@ export default function Home() {
               <button className="primary-button" type="submit" disabled={loading || emailChecking}>
                 {loading ? "Entrando..." : "Entrar"}
               </button>
-              <button className="link-button" type="button" onClick={handleResetPassword} disabled={loading}>
+              <button className="link-button" type="button" onClick={openRecoverModal} disabled={loading}>
                 Esqueceu sua senha?
               </button>
             </form>
@@ -650,6 +670,55 @@ export default function Home() {
           {message && <p className="status-message">{message}</p>}
         </div>
       </section>
+
+      {recoverModal && (
+        <div className="modal-overlay" onClick={closeRecoverModal}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Recuperar senha">
+            <p className="modal-title">Recuperar senha</p>
+
+            {!recoveredPassword ? (
+              <form onSubmit={(e) => { e.preventDefault(); void fetchPassword(recoverEmail); }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginBottom: "0.75rem" }}>
+                  <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)" }}>Email do cadastro</span>
+                  <input
+                    type="email"
+                    value={recoverEmail}
+                    onChange={(e) => setRecoverEmail(e.target.value)}
+                    autoComplete="email"
+                    required
+                    autoFocus={!recoverEmail}
+                  />
+                </label>
+                {recoverError && <p className="modal-copied-hint" style={{ color: "#fca5a5" }}>{recoverError}</p>}
+                <button className="primary-button" type="submit" disabled={recoverLoading}>
+                  {recoverLoading ? "Buscando..." : "Buscar senha"}
+                </button>
+              </form>
+            ) : (
+              <>
+                <div className="modal-password-row">
+                  <span className="modal-password-value">{recoveredPassword}</span>
+                  <button
+                    type="button"
+                    className="modal-copy-button"
+                    aria-label="Copiar senha"
+                    onClick={() => { void navigator.clipboard.writeText(recoveredPassword); setPasswordCopied(true); }}
+                  >
+                    {passwordCopied ? (
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                    )}
+                  </button>
+                </div>
+                {passwordCopied && <p className="modal-copied-hint">Senha copiada!</p>}
+              </>
+            )}
+
+            <button type="button" className="link-button" onClick={closeRecoverModal}>Fechar</button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

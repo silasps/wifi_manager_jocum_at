@@ -7,6 +7,7 @@ type ClientDetail = {
   nome?: string | null;
   email?: string | null;
   whatsApp?: string | null;
+  senha?: string | null;
   categoria?: string | null;
   papel?: string | null;
   ativo?: boolean | null;
@@ -100,6 +101,48 @@ function voucherWhatsAppUrl(
   ];
   if (voucher.quota != null) {
     lines.push(`🔢 *Acessos disponíveis:* ${voucher.quota}`);
+  }
+
+  return `${base}?text=${encodeURIComponent(lines.join("\n"))}`;
+}
+
+function userWhatsAppUrl(cliente: ClientDetail, vouchers: Voucher[]): string {
+  const base = whatsAppUrl(cliente.whatsApp);
+  if (!base) return "";
+
+  const first = cliente.nome?.trim().split(/\s+/)[0] || "cliente";
+
+  const active = vouchers.find((v) => {
+    const exp = v.data_expiracao ? new Date(v.data_expiracao).getTime() : null;
+    return v.status === "criado" && exp !== null && exp > Date.now();
+  }) ?? vouchers[0] ?? null;
+
+  const lines = [
+    `Olá, ${first}!`,
+    "",
+    `*Email:* ${cliente.email || "—"}`,
+    `*Senha:* ${cliente.senha || "—"}`,
+    `*Acesso:* https://wifi-manager-react.vercel.app`,
+    `*Categoria:* ${cliente.categoria || "—"}`,
+  ];
+
+  if (active) {
+    const usos = Number.isFinite(Number(active.usos)) ? Number(active.usos) : 0;
+    const dot = voucherDot(active);
+    lines.push(
+      "",
+      `📋 *Voucher ${dot.label.toLowerCase()}*`,
+      `*Código:* ${active.codigo || "pendente"}`,
+      `*Plano:* ${active.tempo_desc || "—"}`,
+      `*Vencimento:* ${fmtDate(active.data_expiracao)}`,
+    );
+    if (active.quota != null) {
+      lines.push(`*Acessos:* ${usos} de ${active.quota} usados`);
+    }
+    const days = daysUntil(active.data_expiracao);
+    if (days !== null && days > 0) {
+      lines.push(`*Dias restantes:* ${days}`);
+    }
   }
 
   return `${base}?text=${encodeURIComponent(lines.join("\n"))}`;
@@ -280,7 +323,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   }
 
   const isMinistry = cliente.categoria === "Ministério";
-  const wppUrl = whatsAppUrl(cliente.whatsApp);
+  const wppUrl = userWhatsAppUrl(cliente, vouchers);
 
   return (
     <main className="admin-page">
