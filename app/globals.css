@@ -823,6 +823,70 @@ input:disabled {
   animation: enter 260ms ease both;
 }
 
+.countdown-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: min(100%, 400px);
+  padding: 40px 24px;
+  background: var(--surface, #1a1a1a);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  text-align: center;
+}
+
+.countdown-card .auth-logo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+}
+
+.countdown-circle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: var(--accent, #ff792a);
+}
+
+.countdown-number {
+  font-size: 3rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+}
+
+.countdown-circle small {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+
+.countdown-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent, #ff792a);
+  margin: 0;
+}
+
+.countdown-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #999);
+  margin: 0;
+}
+
+.countdown-done {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text, #fff7ef);
+  margin: 0;
+  line-height: 1.5;
+}
+
 @keyframes enter {
   from {
     opacity: 0;
@@ -1211,13 +1275,16 @@ input:disabled {
 .home-main,
 .home-visual,
 .home-card,
-.home-alert,
-.home-menu,
-.copy-dialog {
+.home-menu {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   background: rgba(33, 33, 34, 0.9);
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.36);
+}
+
+.home-alert {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
 }
 
 .home-main {
@@ -1273,8 +1340,7 @@ input:disabled {
   font-weight: 850;
 }
 
-.home-card,
-.home-alert {
+.home-card {
   width: min(100%, 500px);
   margin: 0 auto 16px;
   padding: 16px;
@@ -1283,8 +1349,7 @@ input:disabled {
 }
 
 .home-card h1,
-.home-card h2,
-.home-alert h2 {
+.home-card h2 {
   margin: 0;
   color: #fff7ef;
   text-align: center;
@@ -1323,38 +1388,117 @@ input:disabled {
   overflow-wrap: anywhere;
 }
 
+.home-value-empty {
+  color: #5a5450;
+  font-weight: 500;
+}
+
 .home-alert {
-  display: grid;
-  justify-items: center;
-  gap: 14px;
-  border-width: 5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 500px);
+  margin: 0 auto 16px;
+  padding: 10px 14px;
+  border-width: 1px;
+  border-left-width: 3px;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.home-alert:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .home-alert.danger {
-  border-color: #e30000;
+  border-color: rgba(227, 0, 0, 0.25);
+  border-left-color: #e30000;
 }
 
 .home-alert.warning {
-  border-color: #ffb020;
+  border-color: rgba(255, 176, 32, 0.25);
+  border-left-color: #ffb020;
 }
 
-.home-alert.danger h2,
-.home-alert.danger p {
-  color: #ff4d4d;
+.home-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
 }
 
-.home-alert.warning h2,
-.home-alert.warning p {
+.home-alert.danger .home-alert-dot {
+  background: #e30000;
+}
+
+.home-alert.warning .home-alert-dot {
+  background: #ffb020;
+}
+
+.home-alert-label {
+  flex: 1;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.home-alert.danger .home-alert-label {
+  color: #ff8080;
+}
+
+.home-alert.warning .home-alert-label {
   color: #ffbd66;
 }
 
-.home-alert p {
-  width: 100%;
-  margin: 0;
-  padding-top: 12px;
-  border-top: 2px solid currentColor;
+.home-alert-chevron {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.home-alert-dialog {
+  width: min(100%, 400px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(33, 33, 34, 0.97);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.5);
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  justify-items: center;
   text-align: center;
-  font-weight: 750;
+}
+
+.home-alert-dialog h2 {
+  margin: 0;
+  color: #fff7ef;
+  font-size: 1.1rem;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.home-alert-dialog p {
+  margin: 0;
+  color: #cfc8c1;
+  font-size: 0.9rem;
+}
+
+.home-alert-dialog.danger {
+  border-color: rgba(227, 0, 0, 0.35);
+}
+
+.home-alert-dialog.danger h2 {
+  color: #ff8080;
+}
+
+.home-alert-dialog.warning {
+  border-color: rgba(255, 176, 32, 0.35);
+}
+
+.home-alert-dialog.warning h2 {
+  color: #ffbd66;
 }
 
 .home-renew-button,
@@ -1408,14 +1552,14 @@ input:disabled {
   min-height: 42px;
   padding: 8px;
   border-radius: 6px;
-  background: #fff7ef;
-  color: #ff792a;
+  background: rgba(255, 255, 255, 0.05);
+  color: #d8d0c8;
   font-size: 0.86rem;
   font-weight: 760;
 }
 
 .voucher-row.inactive {
-  color: #e10000;
+  opacity: 0.5;
 }
 
 .voucher-row button {
@@ -1427,6 +1571,73 @@ input:disabled {
   background: transparent;
   color: currentColor;
   font-size: 1.25rem;
+}
+
+.voucher-dot-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.voucher-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.voucher-status-dot.green  { background: #22c55e; box-shadow: 0 0 5px rgba(34, 197, 94, 0.5); }
+.voucher-status-dot.yellow { background: #f59e0b; box-shadow: 0 0 5px rgba(245, 158, 11, 0.5); }
+.voucher-status-dot.red    { background: #ef4444; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5); }
+
+.voucher-dot-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: #1a1a1b;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff7ef;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.voucher-dot-btn:hover .voucher-dot-tip,
+.voucher-dot-btn.tip-open .voucher-dot-tip {
+  opacity: 1;
+}
+
+.voucher-legend {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: #9d958e;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.voucher-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .home-empty {
@@ -1498,8 +1709,7 @@ input:disabled {
   backdrop-filter: blur(7px);
 }
 
-.home-menu,
-.copy-dialog {
+.home-menu {
   width: min(100%, 360px);
   padding: 18px;
 }
@@ -1546,21 +1756,81 @@ input:disabled {
   font-weight: 850;
 }
 
-.copy-dialog h2 {
-  margin: 0 0 10px;
-  color: #fff7ef;
-  font-size: 1.35rem;
-  letter-spacing: 0;
+.voucher-copied-dialog {
+  width: 260px;
+  border-radius: 20px;
+  border: 2px solid #ff792a;
+  background: rgba(29, 36, 41, 0.82);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 24px;
+  gap: 16px;
 }
 
-.copy-dialog p {
-  margin: 0 0 18px;
-  color: #d8d0c8;
-  overflow-wrap: anywhere;
-}
-
-.copy-dialog .home-renew-button {
+.voucher-copied-top {
+  position: relative;
   width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.voucher-copied-logo {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.voucher-copied-close {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #ff792a;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voucher-copied-body {
+  width: 100%;
+  background: #1e2528;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
+}
+
+.voucher-copied-body p {
+  margin: 0;
+  color: #d8d0c8;
+  font-size: 0.875rem;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.voucher-copied-divider {
+  width: 100%;
+  height: 2px;
+  background: #ff792a;
+  margin: 15px 0;
+}
+
+.voucher-copied-warning {
+  font-size: 1rem !important;
+  color: #fff7ef !important;
+  font-weight: 600;
 }
 
 @media (max-width: 380px) {
@@ -1606,5 +1876,375 @@ input:disabled {
   .home-visual img {
     width: 190px;
     height: 190px;
+  }
+}
+
+/* ─── Admin ──────────────────────────────────────────────── */
+
+.admin-page {
+  min-height: 100svh;
+  padding: 0 0 40px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 20px;
+}
+
+.admin-topbar h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff7ef;
+}
+
+.admin-back {
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+  font-size: 1rem;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.admin-back:hover {
+  color: #fff7ef;
+}
+
+.admin-search-wrap {
+  padding: 0 16px 16px;
+}
+
+.admin-search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(33, 33, 34, 0.88);
+  color: #fff7ef;
+  font-size: 0.95rem;
+}
+
+.admin-search-input:focus {
+  outline: none;
+  border-color: rgba(255, 121, 42, 0.6);
+}
+
+.admin-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.admin-loading,
+.admin-empty {
+  padding: 0 16px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.9rem;
+}
+
+.admin-message {
+  padding: 0 16px 12px;
+  color: rgba(255, 121, 42, 0.9);
+  font-size: 0.9rem;
+}
+
+/* Client list */
+
+.admin-client-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 16px;
+}
+
+.admin-client-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(33, 33, 34, 0.7);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+}
+
+.admin-client-row:hover {
+  background: rgba(255, 121, 42, 0.08);
+}
+
+.admin-client-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-client-info strong {
+  font-size: 0.95rem;
+  color: #fff7ef;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-client-info span {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-client-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.admin-chevron {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+/* Tags / badges */
+
+.admin-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.admin-tag--role {
+  background: rgba(255, 121, 42, 0.2);
+  color: #ff792a;
+}
+
+.admin-tag--active {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+}
+
+.admin-tag--inactive {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Detail page */
+
+.admin-detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px;
+}
+
+.admin-section {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(33, 33, 34, 0.8);
+  padding: 20px;
+}
+
+.admin-section-title {
+  margin: 0 0 16px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 121, 42, 0.85);
+}
+
+/* Field grid */
+
+.admin-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 20px;
+  margin: 0 0 20px;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-field dt {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.admin-field dd {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #fff7ef;
+  word-break: break-all;
+}
+
+/* Papel editor */
+
+.admin-papel-editor {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 16px;
+}
+
+.admin-papel-label {
+  display: block;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 8px;
+}
+
+.admin-papel-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-select {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(11, 11, 12, 0.6);
+  color: #fff7ef;
+  font-size: 0.9rem;
+}
+
+.admin-select:focus {
+  outline: none;
+  border-color: rgba(255, 121, 42, 0.6);
+}
+
+.admin-save-button {
+  padding: 9px 18px;
+  border: none;
+  border-radius: 8px;
+  background: #ff792a;
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.admin-save-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.admin-save-button:not(:disabled):hover {
+  opacity: 0.88;
+}
+
+/* Financas */
+
+.admin-financa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-financa-row {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-financa-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.admin-financa-plan {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.admin-financa-value {
+  font-size: 1rem;
+  color: #4ade80;
+}
+
+.admin-financa-date {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.admin-financa-ref {
+  margin: 0;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.3);
+  word-break: break-all;
+  font-family: monospace;
+}
+
+/* Vouchers */
+
+.admin-voucher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-voucher-row {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-voucher-row--inactive {
+  opacity: 0.55;
+}
+
+.admin-voucher-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-voucher-code {
+  font-family: monospace;
+  font-size: 0.88rem;
+  color: #fff7ef;
+  letter-spacing: 0.05em;
+}
+
+.admin-voucher-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.admin-voucher-details span {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+@media (max-width: 480px) {
+  .admin-field-grid {
+    grid-template-columns: 1fr;
   }
 }

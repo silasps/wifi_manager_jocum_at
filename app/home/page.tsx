@@ -15,6 +15,7 @@ type Voucher = {
   data_expiracao?: string | null;
   qtdObreiros?: number | null;
   qtd_obreiros?: number | null;
+  usos?: number | null;
 };
 
 type VoucherStatus = "Vencido" | "2 dias" | "Em dia" | "Sem voucher";
@@ -54,8 +55,13 @@ function getVoucherStatus(voucher?: Voucher | null): VoucherStatus {
   return "Em dia";
 }
 
-function activeLabel(status?: string | null) {
-  return status === "criado" ? "Ativo" : "Inat.";
+function getVoucherRowStatus(voucher: Voucher): { color: "green" | "yellow" | "red"; label: string } {
+  const expiration = parseDate(voucher.data_expiracao)?.getTime();
+  if (!expiration) return { color: "red", label: "Sem data" };
+  const now = Date.now();
+  if (expiration <= now) return { color: "red", label: "Vencido" };
+  if (expiration <= now + twoDays) return { color: "yellow", label: "Vencendo" };
+  return { color: "green", label: "Ativo" };
 }
 
 export default function HomePage() {
@@ -64,6 +70,8 @@ export default function HomePage() {
   const [role, setRole] = useState("user");
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [openTipIndex, setOpenTipIndex] = useState<number | null>(null);
   const [copiedCode, setCopiedCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -145,7 +153,7 @@ export default function HomePage() {
               <p className="home-greeting">Olá, {firstName(cliente?.nome)}.</p>
 
               <section className="home-card" aria-label="Resumo do pacote">
-                <h1>Resumo pacote de utilização da estrutura de internet</h1>
+                <h1>Resumo Wi-Fi Jocum AT</h1>
                 <div className="home-summary-grid">
                   <div className="home-labels">
                     {cliente?.categoria === "Ministério" && <span>Qtd obreiros:</span>}
@@ -156,24 +164,29 @@ export default function HomePage() {
                   <div className="home-values">
                     {cliente?.categoria === "Ministério" && <span>{ministryPeople}</span>}
                     <span>{cliente?.categoria || "Obreiro"}</span>
-                    <span>{vouchers.length ? `${vouchers.length} voucher${vouchers.length > 1 ? "s" : ""}` : "Sem voucher"}</span>
+                    <span>
+                      {currentVoucher?.usos != null
+                        ? `${currentVoucher.usos} uso${currentVoucher.usos !== 1 ? "s" : ""}`
+                        : <span className="home-value-empty">—</span>}
+                    </span>
                     <span>{formatDate(currentVoucher?.data_expiracao)}</span>
                   </div>
                 </div>
               </section>
 
               {(voucherStatus === "Vencido" || voucherStatus === "2 dias") && (
-                <section className={`home-alert ${voucherStatus === "Vencido" ? "danger" : "warning"}`} aria-label="Aviso de vencimento">
-                  <h2>
-                    {voucherStatus === "Vencido"
-                      ? "Seu pacote de utilização está vencido"
-                      : "Seu pacote de utilização está quase vencido"}
-                  </h2>
-                  <p>Clique no botão abaixo para renovar</p>
-                  <button className="home-renew-button" onClick={() => (window.location.href = "/renovacao")} type="button">
-                    Renovação
-                  </button>
-                </section>
+                <button
+                  className={`home-alert ${voucherStatus === "Vencido" ? "danger" : "warning"}`}
+                  onClick={() => setAlertOpen(true)}
+                  type="button"
+                  aria-label="Ver detalhes do aviso de vencimento"
+                >
+                  <span className="home-alert-dot" aria-hidden="true" />
+                  <span className="home-alert-label">
+                    {voucherStatus === "Vencido" ? "Pacote vencido" : "Pacote vencendo em breve"}
+                  </span>
+                  <span className="home-alert-chevron" aria-hidden="true">›</span>
+                </button>
               )}
 
               <section className="home-card voucher-card" aria-label="Lista de vouchers">
@@ -188,12 +201,21 @@ export default function HomePage() {
                 <div className="voucher-list">
                   {vouchers.length ? (
                     vouchers.map((voucher, index) => {
-                      const inactive = voucher.status !== "criado";
+                      const rowStatus = getVoucherRowStatus(voucher);
+                      const inactive = rowStatus.color === "red";
                       return (
                         <div className={`voucher-row ${inactive ? "inactive" : ""}`} key={`${voucher.codigo || "voucher"}-${index}`}>
                           <span>{formatDate(voucher.data_expiracao, true)}</span>
                           <strong>{voucher.codigo || "xxxxx-xxxxx"}</strong>
-                          <span>{activeLabel(voucher.status)}</span>
+                          <button
+                            className={`voucher-dot-btn ${openTipIndex === index ? "tip-open" : ""}`}
+                            onClick={() => setOpenTipIndex(openTipIndex === index ? null : index)}
+                            type="button"
+                            aria-label={rowStatus.label}
+                          >
+                            <span className={`voucher-status-dot ${rowStatus.color}`} aria-hidden="true" />
+                            <span className="voucher-dot-tip" role="tooltip">{rowStatus.label}</span>
+                          </button>
                           <button onClick={() => copyVoucher(voucher.codigo)} type="button" aria-label={`Copiar voucher ${voucher.codigo || ""}`}>
                             ⧉
                           </button>
@@ -204,18 +226,15 @@ export default function HomePage() {
                     <p className="home-empty">Nenhum voucher encontrado.</p>
                   )}
                 </div>
+
+                <div className="voucher-legend" aria-label="Legenda de status">
+                  <span><span className="voucher-status-dot green" aria-hidden="true" />Ativo</span>
+                  <span><span className="voucher-status-dot yellow" aria-hidden="true" />Vencendo</span>
+                  <span><span className="voucher-status-dot red" aria-hidden="true" />Vencido</span>
+                </div>
               </section>
 
               {message && <p className="status-message">{message}</p>}
-
-              <div className="home-actions">
-                <button className="home-renew-button" onClick={() => (window.location.href = "/renovacao")} type="button">
-                  Renovação
-                </button>
-                <button className="home-exit-button" onClick={signOut} type="button">
-                  Sair
-                </button>
-              </div>
             </>
           )}
         </div>
@@ -247,14 +266,45 @@ export default function HomePage() {
         </div>
       )}
 
-      {copiedCode && (
-        <div className="home-menu-backdrop" role="presentation">
-          <div className="copy-dialog" role="alertdialog" aria-modal="true" aria-labelledby="copy-title">
-            <h2 id="copy-title">Voucher copiado</h2>
-            <p>O código {copiedCode} foi enviado para a área de transferência.</p>
-            <button className="home-renew-button" onClick={() => setCopiedCode("")} type="button">
-              Ok
+      {alertOpen && (voucherStatus === "Vencido" || voucherStatus === "2 dias") && (
+        <div className="home-menu-backdrop" role="presentation" onClick={() => setAlertOpen(false)}>
+          <div
+            className={`home-alert-dialog ${voucherStatus === "Vencido" ? "danger" : "warning"}`}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="alert-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="home-menu-close" onClick={() => setAlertOpen(false)} type="button" aria-label="Fechar">×</button>
+            <h2 id="alert-dialog-title">
+              {voucherStatus === "Vencido"
+                ? "Seu pacote de utilização está vencido"
+                : "Seu pacote de utilização está quase vencido"}
+            </h2>
+            <p>Renove agora para manter o acesso à internet da base.</p>
+            <button className="home-renew-button" onClick={() => (window.location.href = "/renovacao")} type="button">
+              Renovação
             </button>
+          </div>
+        </div>
+      )}
+
+      {copiedCode && (
+        <div className="home-menu-backdrop" role="presentation" onClick={() => setCopiedCode("")}>
+          <div className="voucher-copied-dialog" role="alertdialog" aria-modal="true" aria-labelledby="copy-title" onClick={(e) => e.stopPropagation()}>
+            <div className="voucher-copied-top">
+              <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="voucher-copied-logo" />
+              <button className="voucher-copied-close" onClick={() => setCopiedCode("")} type="button" aria-label="Fechar">×</button>
+            </div>
+            <div className="voucher-copied-body">
+              <p id="copy-title">Voucher copiado com sucesso.</p>
+              <div className="voucher-copied-divider" aria-hidden="true" />
+              <p className="voucher-copied-warning">
+                Importante!<br />
+                Seu voucher é pessoal e intransferível.<br /><br />
+                Favor não compartilhar.
+              </p>
+            </div>
           </div>
         </div>
       )}
