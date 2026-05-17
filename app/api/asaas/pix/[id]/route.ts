@@ -15,6 +15,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
   const res = await fetch(`${getAsaasApiUrl()}/payments/${id}`, {
     headers: { accept: "application/json", access_token: apiKey },
+    cache: "no-store",
   });
 
   if (!res.ok) return NextResponse.json({ error: "Não foi possível verificar o pagamento." }, { status: res.status });

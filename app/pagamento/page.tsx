@@ -51,12 +51,22 @@ export default function PaymentPage() {
   const [payload, setPayload] = useState<SignupPayload | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [completed, setCompleted] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
   const [pixData, setPixData] = useState<PixData | null>(null);
   const [copied, setCopied] = useState(false);
-  const [showCardForm, setShowCardForm] = useState(false);
+const [showCardForm, setShowCardForm] = useState(false);
   const [cardData, setCardData] = useState({ holderName: "", number: "", expiry: "", cvv: "", cpf: "" });
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      window.location.href = "/home";
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => (c !== null ? c - 1 : null)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
   const registerPendingAccess = async (signupPayload: SignupPayload, asaasPayment: AsaasPaymentLink) => {
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -95,12 +105,19 @@ export default function PaymentPage() {
       return false;
     }
 
+    const quota =
+      signupPayload.categoria === "Casal"
+        ? 12
+        : signupPayload.categoria === "Ministério"
+          ? 6 * (signupPayload.qtd_pessoas_ministerio || 1)
+          : 6;
+
     const { error: voucherError } = await supabase.from("vouchers").insert({
       cliente_id: userId,
       status: "pendente",
       tempo_desc: signupPayload.tempo,
-      quota: signupPayload.quota,
-      qtdObreiros: signupPayload.qtd_pessoas_ministerio || 3,
+      quota,
+      qtdObreiros: signupPayload.qtd_pessoas_ministerio || 1,
     });
 
     const { error: financeError } = await supabase.from("financas").insert({
@@ -118,6 +135,43 @@ export default function PaymentPage() {
     return true;
   };
 
+  const registerRenewal = async (signupPayload: SignupPayload, asaasPayment: AsaasPaymentLink) => {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      setMessage("Sessão expirada. Faça login novamente.");
+      return false;
+    }
+
+    const quota =
+      signupPayload.categoria === "Casal"
+        ? 12
+        : signupPayload.categoria === "Ministério"
+          ? 6 * (signupPayload.qtd_pessoas_ministerio || 1)
+          : 6;
+
+    const { error: voucherError } = await supabase.from("vouchers").insert({
+      cliente_id: user.id,
+      status: "pendente",
+      tempo_desc: signupPayload.tempo,
+      quota,
+      qtdObreiros: signupPayload.qtd_pessoas_ministerio || 1,
+    });
+
+    const { error: financeError } = await supabase.from("financas").insert({
+      cliente_id: user.id,
+      plano_escolhido: signupPayload.tempo,
+      comprovante_pgto: `${asaasPayment.reference} | ${asaasPayment.id || "asaas"} | ${asaasPayment.url}`,
+      valor_pago: signupPayload.valor,
+    });
+
+    if (voucherError || financeError) {
+      setMessage("Falha ao registrar voucher ou financeiro. Entre em contato com a equipe.");
+      return false;
+    }
+
+    return true;
+  };
+
   // Poll for PIX payment confirmation
   useEffect(() => {
     if (!pixData) return;
@@ -129,8 +183,7 @@ export default function PaymentPage() {
         const res = await fetch(`/api/asaas/pix/${pixData.chargeId}`);
         const data = (await res.json()) as { status?: string };
         if (cancelled) return;
-
-        if (data.status === "RECEIVED" || data.status === "CONFIRMED") {
+if (data.status === "RECEIVED" || data.status === "CONFIRMED") {
           const currentPayload = JSON.parse(sessionStorage.getItem("wf_signup") || "null") as SignupPayload | null;
           const storedAsaas = sessionStorage.getItem("wf_asaas");
 
@@ -140,11 +193,12 @@ export default function PaymentPage() {
           }
 
           const asaasData = JSON.parse(storedAsaas) as AsaasPaymentLink;
-          const ok = await registerPendingAccess(currentPayload, asaasData);
+          const register = currentPayload.transicao_pgto === "renovacao" ? registerRenewal : registerPendingAccess;
+          const ok = await register(currentPayload, asaasData);
           if (ok && !cancelled) {
             sessionStorage.removeItem("wf_signup");
             sessionStorage.removeItem("wf_asaas");
-            setCompleted(true);
+            setCountdown(20);
           }
         }
       } catch {
@@ -171,7 +225,8 @@ export default function PaymentPage() {
           const signupData = JSON.parse(storedSignup) as SignupPayload;
           const asaasData = JSON.parse(storedAsaas) as AsaasPaymentLink;
 
-          void registerPendingAccess(signupData, asaasData).then((ok) => {
+          const register = signupData.transicao_pgto === "renovacao" ? registerRenewal : registerPendingAccess;
+          void register(signupData, asaasData).then((ok) => {
             if (ok) {
               sessionStorage.removeItem("wf_signup");
               sessionStorage.removeItem("wf_asaas");
@@ -183,7 +238,7 @@ export default function PaymentPage() {
         }
       }
 
-      setCompleted(true);
+      setCountdown(20);
       return;
     }
 
@@ -306,28 +361,34 @@ export default function PaymentPage() {
     }
 
     const asaasData: AsaasPaymentLink = { id: data.chargeId, url: `card:${data.chargeId}`, reference };
-    const ok = await registerPendingAccess(payload, asaasData);
+    const register = payload.transicao_pgto === "renovacao" ? registerRenewal : registerPendingAccess;
+    const ok = await register(payload, asaasData);
     if (ok) {
       sessionStorage.removeItem("wf_signup");
       sessionStorage.removeItem("wf_card_ref");
-      setCompleted(true);
+      setCountdown(20);
     }
     setLoading(false);
   };
 
-  if (completed) {
+  if (countdown !== null) {
     return (
       <main className="payment-page">
-        <section className="flow-shell success-shell" aria-label="Pagamento enviado">
-          <div className="flow-card success-card motion-in">
+        <section className="flow-shell success-shell" aria-label="Processando voucher">
+          <div className="countdown-card motion-in">
             <img className="auth-logo" src="/brand/logo-at-symbol.png" alt="JOCUM AT" />
-            <p className="eyebrow">Pagamento no Asaas</p>
-            <h1>Seu pagamento foi recebido.</h1>
-            <p className="form-intro">Obrigado. A equipe da Base Jocum AT vai conferir o registro e ativar o voucher.</p>
-            {message && <p className="status-message">{message}</p>}
-            <a className="primary-button as-link" href="/">
-              Voltar ao início
-            </a>
+            <div className="countdown-circle">
+              <span className="countdown-number">{countdown}</span>
+              <small>segundos</small>
+            </div>
+            {countdown > 0 ? (
+              <>
+                <p className="countdown-title">Processando voucher...</p>
+                <p className="countdown-subtitle">Aguarde enquanto criamos seu acesso</p>
+              </>
+            ) : (
+              <p className="countdown-done">Voucher criado com sucesso. Redirecionando...</p>
+            )}
           </div>
         </section>
       </main>
@@ -375,6 +436,7 @@ export default function PaymentPage() {
                     border: "1px solid var(--border, #ddd)",
                     borderRadius: 6,
                     background: "var(--surface-alt, #f5f5f5)",
+                    color: "#111",
                     minWidth: 0,
                   }}
                   onFocus={(e) => e.target.select()}
@@ -398,6 +460,7 @@ export default function PaymentPage() {
               <p className="tiny-note" style={{ marginTop: 8 }}>
                 Não feche esta página. O cadastro é criado automaticamente assim que o pagamento for confirmado.
               </p>
+
             </section>
 
             {message && <p className="status-message">{message}</p>}
@@ -481,7 +544,7 @@ export default function PaymentPage() {
     <main className="payment-page">
       <section className="payment-shell" aria-label="Área de pagamento">
         <div className="payment-brand">
-          <a className="back-button" href="/termos-de-uso" aria-label="Voltar">
+          <a className="back-button" href={payload?.transicao_pgto === "renovacao" ? "/renovacao" : "/termos-de-uso"} aria-label="Voltar">
             ‹
           </a>
           <img className="brand-logo" src="/brand/logo-jocum-almirante.png" alt="JOCUM Almirante Tamandaré AT" />
@@ -511,8 +574,7 @@ export default function PaymentPage() {
 
               <section className="payment-card" aria-label="Pagamento pelo Asaas">
                 <div className="section-heading">
-                  <p>Dados para pagamento</p>
-                  <strong>Asaas</strong>
+                  <p>Selecione a forma de pagamento</p>
                 </div>
 
                 <div className="asaas-options" aria-label="Formas de pagamento disponíveis">
