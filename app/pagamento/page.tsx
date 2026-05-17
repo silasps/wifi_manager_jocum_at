@@ -183,7 +183,7 @@ const [showCardForm, setShowCardForm] = useState(false);
         const res = await fetch(`/api/asaas/pix/${pixData.chargeId}`);
         const data = (await res.json()) as { status?: string };
         if (cancelled) return;
-if (data.status === "RECEIVED" || data.status === "CONFIRMED") {
+        if (data.status === "RECEIVED" || data.status === "CONFIRMED" || data.status === "RECEIVED_IN_CASH") {
           const currentPayload = JSON.parse(sessionStorage.getItem("wf_signup") || "null") as SignupPayload | null;
           const storedAsaas = sessionStorage.getItem("wf_asaas");
 
