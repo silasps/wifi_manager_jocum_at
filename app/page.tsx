@@ -55,8 +55,12 @@ function durationLabel(plan: Plan) {
   return "Duração do acesso";
 }
 
-function durationUnit(plan: Plan) {
-  return accessPlans.find((item) => item.value === plan)?.unit ?? "tempo";
+function durationUnit(plan: Plan, value?: string) {
+  const n = Number(value || 0);
+  if (plan === "Diário") return n === 1 ? "dia" : "dias";
+  if (plan === "Mensal") return n === 1 ? "mês" : "meses";
+  if (plan === "Anual") return n === 1 ? "ano" : "anos";
+  return "tempo";
 }
 
 function dailyUnitValue(category: Category) {
@@ -288,7 +292,7 @@ export default function Home() {
         next.name = "";
         next.ministryPeople = "";
       }
-      if (field === "plan") next.time = value === "Diário" ? "2" : "";
+      if (field === "plan") next.time = value === "Diário" ? "2" : "1";
       return next;
     });
   };
@@ -586,7 +590,7 @@ export default function Home() {
                     disabled={!signup.plan}
                     required
                   />
-                  <span>{durationUnit(signup.plan)}</span>
+                  <span>{durationUnit(signup.plan, signup.time)}</span>
                 </span>
               </label>
 

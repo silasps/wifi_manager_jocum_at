@@ -98,7 +98,7 @@ export default function HomePage() {
 
       const [{ data: clienteData, error: clienteError }, { data: voucherData, error: voucherError }] = await Promise.all([
         supabase.from("clientes").select("*").eq("user_id", user.id).maybeSingle(),
-        supabase.from("vouchers").select("*").eq("cliente_id", user.id).order("data_expiracao", { ascending: true }),
+        supabase.from("vouchers").select("*").eq("cliente_id", user.id).order("data_expiracao", { ascending: false }),
       ]);
 
       if (!alive) return;

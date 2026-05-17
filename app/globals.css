@@ -2248,3 +2248,421 @@ input:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Admin: section header with count ─── */
+
+.admin-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.admin-section-header .admin-section-title {
+  margin: 0;
+}
+
+.admin-section-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+}
+
+/* ─── Admin: scrollable container ─── */
+
+.admin-scroll-container {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  padding-right: 4px;
+}
+
+.admin-scroll-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.admin-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+}
+
+/* ─── Admin: financial row (compact) ─── */
+
+.admin-financa-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-financa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.admin-financa-field span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.admin-financa-field strong {
+  font-size: 0.88rem;
+  color: #fff7ef;
+  font-weight: 500;
+}
+
+.admin-financa-field--right {
+  text-align: right;
+}
+
+.admin-financa-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  margin: 2px 0;
+}
+
+.admin-financa-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.admin-financa-value {
+  font-size: 1rem !important;
+  color: #4ade80 !important;
+  font-weight: 700 !important;
+}
+
+.admin-voucher-details em {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.28);
+}
+
+/* ─── Admin: voucher row ─── */
+
+.admin-voucher-row {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity 0.15s;
+}
+
+.admin-voucher-row--inactive {
+  opacity: 0.45;
+}
+
+.admin-voucher-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-voucher-code {
+  flex: 1;
+  font-family: monospace;
+  font-size: 0.88rem;
+  color: #fff7ef;
+  letter-spacing: 0.05em;
+}
+
+.admin-voucher-copy {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.admin-voucher-copy:not(:disabled):hover {
+  color: #fff7ef;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.admin-voucher-copy:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.admin-voucher-wpp {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: rgba(37, 211, 102, 0.12);
+  color: #25d366;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.admin-voucher-wpp:hover {
+  background: rgba(37, 211, 102, 0.26);
+}
+
+.admin-voucher-wpp svg {
+  width: 15px;
+  height: 15px;
+}
+
+.admin-voucher-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.admin-voucher-details span {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.admin-voucher-renew {
+  align-self: flex-start;
+  padding: 5px 14px;
+  border: 1px solid rgba(255, 121, 42, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  color: #ff792a;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.admin-voucher-renew:hover {
+  background: rgba(255, 121, 42, 0.1);
+  border-color: rgba(255, 121, 42, 0.7);
+}
+
+/* ─── Admin: renewal modal ─── */
+
+.admin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.admin-modal {
+  position: relative;
+  width: min(100%, 380px);
+  background: #1a1a1b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.admin-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff7ef;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.admin-modal-close:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.admin-modal-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff7ef;
+}
+
+.admin-modal-code {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.06em;
+}
+
+.admin-modal-info {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.admin-modal-info strong {
+  color: #fff7ef;
+}
+
+.admin-modal-info--warn {
+  color: #f59e0b;
+}
+
+.admin-modal-error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #ef4444;
+}
+
+.admin-modal-confirm {
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #ff792a;
+  color: #160f0a;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.admin-modal-confirm:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.admin-modal-confirm:not(:disabled):hover {
+  opacity: 0.88;
+}
+
+.admin-modal-confirm--ghost {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  box-shadow: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.admin-modal-confirm--ghost:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 1;
+}
+
+.admin-modal-wpp {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #25d366;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.admin-modal-wpp:hover {
+  opacity: 0.88;
+}
+
+.admin-modal-wpp svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* ─── Admin: WhatsApp link ─── */
+
+.admin-field-wpp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-wpp-link {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(37, 211, 102, 0.15);
+  color: #25d366;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.admin-wpp-link:hover {
+  background: rgba(37, 211, 102, 0.28);
+}
+
+.admin-wpp-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ─── Admin: result modal grid ─── */
+
+.admin-result-grid {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  gap: 12px;
+}
+
+.admin-result-row span {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.admin-result-row strong {
+  font-size: 0.88rem;
+  color: #fff7ef;
+  text-align: right;
+}
+
+/* ─── Admin: countdown page ─── */
+
+.admin-countdown-page {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}

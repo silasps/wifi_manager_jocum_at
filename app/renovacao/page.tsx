@@ -28,8 +28,12 @@ function durationLabel(plan: Plan) {
   return "Duração do acesso";
 }
 
-function durationUnit(plan: Plan) {
-  return accessPlans.find((item) => item.value === plan)?.unit ?? "tempo";
+function durationUnit(plan: Plan, value?: string) {
+  const n = Number(value || 0);
+  if (plan === "Diário") return n === 1 ? "dia" : "dias";
+  if (plan === "Mensal") return n === 1 ? "mês" : "meses";
+  if (plan === "Anual") return n === 1 ? "ano" : "anos";
+  return "tempo";
 }
 
 function dailyUnitValue(category: Category) {
@@ -144,8 +148,15 @@ export default function RenovacaoPage() {
         return;
       }
 
-      const [{ data: cliente }, { data: voucher }] = await Promise.all([
-        supabase.from("clientes").select("nome, categoria, email, whatsApp").eq("user_id", user.id).maybeSingle(),
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        window.location.href = "/";
+        return;
+      }
+
+      const [profileRes, { data: voucher }] = await Promise.all([
+        fetch("/api/user/profile", { headers: { Authorization: `Bearer ${token}` } }),
         supabase
           .from("vouchers")
           .select("qtdObreiros")
@@ -155,13 +166,19 @@ export default function RenovacaoPage() {
           .maybeSingle(),
       ]);
 
-      if (cliente) {
-        const c = cliente as { nome?: string | null; categoria?: string | null; email?: string | null; whatsApp?: string | null };
-        setNome(c.nome || "");
-        setEmail(c.email || "");
-        setWhatsApp(c.whatsApp || "");
-        setCategoria((c.categoria as Category) || "Obreiro");
+      if (!profileRes.ok) {
+        const err = (await profileRes.json()) as { error?: string };
+        setMessage(`Não foi possível carregar seus dados: ${err.error ?? profileRes.status}. Entre em contato com a equipe.`);
+        setLoading(false);
+        return;
       }
+
+      const cliente = (await profileRes.json()) as { nome?: string | null; categoria?: string | null; email?: string | null; whatsApp?: string | null };
+      setNome(cliente.nome || "");
+      setEmail(cliente.email || "");
+      setWhatsApp(cliente.whatsApp || "");
+      setCategoria((cliente.categoria as Category) || "Obreiro");
+
       if (voucher) {
         const v = voucher as { qtdObreiros?: number | null };
         if (v.qtdObreiros) setMinistryPeople(String(v.qtdObreiros));
@@ -275,7 +292,7 @@ export default function RenovacaoPage() {
                       key={p.value}
                       onClick={() => {
                         setPlan(p.value);
-                        setTime(p.value === "Diário" ? "2" : "");
+                        setTime(p.value === "Diário" ? "2" : "1");
                       }}
                     >
                       {hint && <em className="discount-badge">{hint}</em>}
@@ -301,7 +318,7 @@ export default function RenovacaoPage() {
                   min={plan === "Diário" ? 2 : 1}
                   disabled={!plan}
                 />
-                <span>{durationUnit(plan)}</span>
+                <span>{durationUnit(plan, time)}</span>
               </span>
             </label>
           </section>
