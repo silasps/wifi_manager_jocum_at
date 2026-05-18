@@ -1,24 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "../../../../utils/supabase/admin";
-
-async function requireAdmin(request: Request) {
-  const token = request.headers.get("Authorization")?.replace("Bearer ", "");
-  if (!token) return null;
-  try {
-    const admin = createAdminClient();
-    const { data: { user }, error } = await admin.auth.getUser(token);
-    if (error || !user) return null;
-    const { data: cliente } = await admin
-      .from("clientes")
-      .select("papel")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (!cliente?.papel || cliente.papel === "user") return null;
-    return user;
-  } catch {
-    return null;
-  }
-}
+import { requireAdmin } from "../../../../utils/supabase/requireAdmin";
 
 export async function GET(request: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -47,12 +29,12 @@ export async function GET(request: Request) {
   type VRow = { cliente_id: string | null; [key: string]: unknown };
   const rows = (vouchers ?? []) as VRow[];
   const clientIds = [...new Set(rows.map((v) => v.cliente_id).filter((id): id is string => !!id))];
-  const clientMap: Record<string, { user_id: string; nome: string | null; email: string | null }> = {};
+  const clientMap: Record<string, { user_id: string; nome: string | null; email: string | null; whatsApp: string | null }> = {};
 
   if (clientIds.length > 0) {
     const { data: clients } = await admin
       .from("clientes")
-      .select("user_id, nome, email")
+      .select("user_id, nome, email, whatsApp")
       .in("user_id", clientIds);
 
     for (const c of (clients ?? [])) {

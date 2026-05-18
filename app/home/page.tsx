@@ -15,7 +15,7 @@ type Voucher = {
   data_expiracao?: string | null;
   qtdObreiros?: number | null;
   qtd_obreiros?: number | null;
-  usos?: number | null;
+  usos?: string | number | null;
 };
 
 type VoucherStatus = "Vencido" | "2 dias" | "Em dia" | "Sem voucher";
@@ -165,9 +165,7 @@ export default function HomePage() {
                     {cliente?.categoria === "Ministério" && <span>{ministryPeople}</span>}
                     <span>{cliente?.categoria || "Obreiro"}</span>
                     <span>
-                      {currentVoucher?.usos != null
-                        ? `${currentVoucher.usos} uso${currentVoucher.usos !== 1 ? "s" : ""}`
-                        : <span className="home-value-empty">—</span>}
+                      {`${currentVoucher?.usos ?? "0/6"} dispositivos`}
                     </span>
                     <span>{formatDate(currentVoucher?.data_expiracao)}</span>
                   </div>

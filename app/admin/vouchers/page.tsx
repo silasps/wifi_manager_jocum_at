@@ -15,8 +15,24 @@ type VoucherRow = {
   usos?: string | number | null;
   created_at?: string | null;
   cliente_id?: string | null;
-  cliente?: { user_id?: string | null; nome?: string | null; email?: string | null } | null;
+  cliente?: { user_id?: string | null; nome?: string | null; email?: string | null; whatsApp?: string | null } | null;
 };
+
+const WPP_SVG = <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" /></svg>;
+
+function voucherWppUrl(phone: string | null | undefined, nome: string | null | undefined, v: VoucherRow): string {
+  if (!phone) return "";
+  const base = `https://wa.me/${phone.replace(/\D/g, "")}`;
+  const first = nome?.trim().split(/\s+/)[0] || "cliente";
+  const lines = [
+    `Olá, ${first}!`, "",
+    "Seguem seus dados de acesso ao Wi-Fi da Base:", "",
+    `🔑 *Voucher:* ${v.codigo || "pendente"}`,
+    `📋 *Plano:* ${v.tempo_desc || "—"}`,
+    `📅 *Vencimento:* ${v.data_expiracao ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(v.data_expiracao)) : "—"}`,
+  ];
+  return `${base}?text=${encodeURIComponent(lines.join("\n"))}`;
+}
 
 function parseUsos(usos?: string | number | null): { used: number; total: number } | null {
   if (usos == null) return null;
@@ -151,6 +167,7 @@ export default function AdminVouchersPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [renewVoucher, setRenewVoucher] = useState<VoucherRow | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [loadingResult, setLoadingResult] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [updatedVoucher, setUpdatedVoucher] = useState<VoucherRow | null>(null);
@@ -158,6 +175,7 @@ export default function AdminVouchersPage() {
   const tokenRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingVoucherIdRef = useRef<string | null>(null);
+  const pendingClienteRef = useRef<VoucherRow["cliente"]>(null);
 
   useEffect(() => {
     if (countdown === null) return;
@@ -167,16 +185,18 @@ export default function AdminVouchersPage() {
       const id = pendingVoucherIdRef.current;
       if (id && tokenRef.current) {
         const t = tokenRef.current;
-        fetch(`/api/admin/vouchers/${id}`, { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" })
+        setLoadingResult(true);
+        setShowResult(true);
+        fetch(`/api/admin/vouchers/${id}?t=${Date.now()}`, { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" })
           .then((r) => r.json())
           .then((d: { voucher?: VoucherRow }) => {
             if (d.voucher) setUpdatedVoucher(d.voucher);
-            setShowResult(true);
+            setLoadingResult(false);
             setQuery("");
             setChartFilter(null);
             void fetchVouchers("", t);
           })
-          .catch(() => { setShowResult(true); void fetchVouchers("", t); });
+          .catch(() => { setLoadingResult(false); void fetchVouchers("", t); });
       } else {
         setShowResult(true);
       }
@@ -252,6 +272,7 @@ export default function AdminVouchersPage() {
     const data = (await res.json()) as { ok?: boolean; error?: string };
     if (data.ok) {
       pendingVoucherIdRef.current = renewVoucher.id ?? null;
+      pendingClienteRef.current = renewVoucher.cliente ?? null;
       setRenewVoucher(null);
       setCountdown(20);
     } else {
@@ -363,7 +384,7 @@ export default function AdminVouchersPage() {
                     {!isExpired && days !== null && <em> · {days} dia{days !== 1 ? "s" : ""}</em>}
                   </span>
                   {usosInfo && (
-                    <span>{usosInfo.used} de {usosInfo.total} {usosInfo.total === 1 ? "acesso usado" : "acessos usados"}</span>
+                    <span>{usosInfo.used}/{usosInfo.total} dispositivos</span>
                   )}
                   {v.tempo_desc && <span>Plano: {v.tempo_desc}</span>}
                 </div>
@@ -414,10 +435,16 @@ export default function AdminVouchersPage() {
         </div>
       )}
 
-      {showResult && updatedVoucher && (
+      {showResult && (
         <div className="admin-modal-backdrop" role="presentation">
           <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3 className="admin-modal-title">Voucher gerado</h3>
+            {loadingResult ? (
+              <div className="admin-result-loading">
+                <div className="admin-result-spinner" />
+                <p>Carregando dados…</p>
+              </div>
+            ) : updatedVoucher ? (<>
             <code className="admin-modal-code">{updatedVoucher.codigo || "pendente"}</code>
             <div className="admin-result-grid">
               <div className="admin-result-row"><span>Status</span><strong>{updatedVoucher.status || "—"}</strong></div>
@@ -429,6 +456,16 @@ export default function AdminVouchersPage() {
                 return <div className="admin-result-row"><span>Acessos</span><strong>{u.used} de {u.total}</strong></div>;
               })()}
             </div>
+            {(() => {
+              const cliente = pendingClienteRef.current;
+              const wpp = voucherWppUrl(cliente?.whatsApp, cliente?.nome, updatedVoucher);
+              return wpp ? (
+                <a href={wpp} target="_blank" rel="noopener noreferrer" className="admin-modal-wpp">
+                  {WPP_SVG}
+                  Enviar pelo WhatsApp
+                </a>
+              ) : null;
+            })()}
             <button
               className="admin-modal-confirm admin-modal-confirm--ghost"
               type="button"
@@ -436,6 +473,7 @@ export default function AdminVouchersPage() {
             >
               Fechar
             </button>
+            </>) : null}
           </div>
         </div>
       )}

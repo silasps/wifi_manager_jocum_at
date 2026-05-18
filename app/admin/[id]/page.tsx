@@ -178,6 +178,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   const [countdown, setCountdown] = useState<number | null>(null);
   const [updatedVoucher, setUpdatedVoucher] = useState<Voucher | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [loadingResult, setLoadingResult] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const pendingVoucherIdRef = useRef<string | null>(null);
 
@@ -188,13 +189,15 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       const id = pendingVoucherIdRef.current;
       if (id && tokenRef.current) {
         const tok = tokenRef.current;
-        fetch(`/api/admin/vouchers/${id}`, { headers: { Authorization: `Bearer ${tok}` }, cache: "no-store" })
+        setLoadingResult(true);
+        setShowResult(true);
+        fetch(`/api/admin/vouchers/${id}?t=${Date.now()}`, { headers: { Authorization: `Bearer ${tok}` }, cache: "no-store" })
           .then((r) => r.json())
           .then((d: { voucher?: Voucher }) => {
             if (d.voucher) setUpdatedVoucher(d.voucher);
-            setShowResult(true);
+            setLoadingResult(false);
           })
-          .catch(() => setShowResult(true));
+          .catch(() => setLoadingResult(false));
       } else {
         setShowResult(true);
       }
@@ -572,7 +575,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
                       {(() => {
                         const u = parseUsos(v.usos);
                         if (!u) return null;
-                        return <span>{u.used} de {u.total} {u.total === 1 ? "acesso usado" : "acessos usados"}</span>;
+                        return <span>{u.used}/{u.total} dispositivos</span>;
                       })()}
                       {isMinistry && v.qtdObreiros != null && v.qtdObreiros > 0 && (
                         <span>{v.qtdObreiros} {v.qtdObreiros === 1 ? "obreiro" : "obreiros"}</span>
@@ -690,7 +693,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       )}
 
       {/* ── Result modal ── */}
-      {showResult && updatedVoucher && (
+      {showResult && (
         <div className="admin-modal-backdrop" role="presentation">
           <div
             className="admin-modal"
@@ -700,6 +703,12 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id="result-title" className="admin-modal-title">Voucher gerado</h3>
+            {loadingResult ? (
+              <div className="admin-result-loading">
+                <div className="admin-result-spinner" />
+                <p>Carregando dados…</p>
+              </div>
+            ) : updatedVoucher ? (<>
             <code className="admin-modal-code">{updatedVoucher.codigo || "pendente"}</code>
 
             <div className="admin-result-grid">
@@ -720,8 +729,8 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
                 if (!u) return null;
                 return (
                   <div className="admin-result-row">
-                    <span>Acessos</span>
-                    <strong>{u.used} de {u.total}</strong>
+                    <span>Dispositivos</span>
+                    <strong>{u.used}/{u.total}</strong>
                   </div>
                 );
               })()}
@@ -751,6 +760,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
             >
               Fechar
             </button>
+            </>) : null}
           </div>
         </div>
       )}
