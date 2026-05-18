@@ -140,8 +140,21 @@ export default function AdminVouchersPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [renewVoucher, setRenewVoucher] = useState<VoucherRow | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [updatedVoucher, setUpdatedVoucher] = useState<VoucherRow | null>(null);
+  const [showResult, setShowResult] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) { setCountdown(null); setShowResult(true); return; }
+    const t = setTimeout(() => setCountdown((c) => c !== null ? c - 1 : null), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
   useEffect(() => {
     async function init() {
@@ -193,6 +206,30 @@ export default function AdminVouchersPage() {
     debounceRef.current = setTimeout(() => void fetchVouchers(value), 350);
   };
 
+  const confirmUpdate = async () => {
+    if (!tokenRef.current || !renewVoucher?.id) return;
+    setUpdating(true);
+    setUpdateError(null);
+    const days = renewVoucher.data_expiracao
+      ? Math.ceil((new Date(renewVoucher.data_expiracao).getTime() - Date.now()) / 86400000)
+      : 0;
+    const safedays = Math.max(0, days);
+    const res = await fetch(`/api/admin/vouchers/${renewVoucher.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenRef.current}` },
+      body: JSON.stringify({ tempo_desc: `${safedays} dias`, status: "pendente" }),
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (data.ok) {
+      setUpdatedVoucher({ ...renewVoucher, tempo_desc: `${safedays} dias`, status: "pendente" });
+      setRenewVoucher(null);
+      setCountdown(20);
+    } else {
+      setUpdateError(data.error || "Erro ao atualizar voucher.");
+    }
+    setUpdating(false);
+  };
+
   const copyVoucher = async (v: VoucherRow) => {
     if (!v.codigo || !v.id) return;
     await navigator.clipboard.writeText(v.codigo);
@@ -201,6 +238,22 @@ export default function AdminVouchersPage() {
   };
 
   const filtered = vouchers.filter((v) => !chartFilter || vStatus(v) === chartFilter);
+
+  if (countdown !== null) {
+    return (
+      <main className="admin-page admin-countdown-page">
+        <div className="countdown-card motion-in">
+          <img className="auth-logo" src="/brand/logo-at-symbol.png" alt="JOCUM AT" />
+          <div className="countdown-circle">
+            <span className="countdown-number">{countdown}</span>
+            <small>segundos</small>
+          </div>
+          <p className="countdown-title">Atualizando voucher…</p>
+          <p className="countdown-subtitle">Aguarde um momento</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="admin-page">
@@ -241,7 +294,6 @@ export default function AdminVouchersPage() {
             const dot = voucherDot(v);
             const inactive = dot.color === "red";
             const days = daysUntil(v.data_expiracao);
-            const usos = Number.isFinite(Number(v.usos)) ? Number(v.usos) : 0;
             const isExpired = inactive && v.data_expiracao && new Date(v.data_expiracao).getTime() <= Date.now();
             return (
               <div
@@ -271,7 +323,7 @@ export default function AdminVouchersPage() {
                     {!isExpired && days !== null && <em> · {days} dia{days !== 1 ? "s" : ""}</em>}
                   </span>
                   {v.quota != null && (
-                    <span>{usos} de {v.quota} {v.quota === 1 ? "acesso usado" : "acessos usados"}</span>
+                    <span>{v.usos ?? "—"} de {v.quota} {v.quota === 1 ? "acesso usado" : "acessos usados"}</span>
                   )}
                   {v.tempo_desc && <span>Plano: {v.tempo_desc}</span>}
                 </div>
@@ -286,9 +338,60 @@ export default function AdminVouchersPage() {
                     <span className="admin-chevron" style={{ fontSize: "0.9rem" }}>›</span>
                   </a>
                 )}
+
+                <button
+                  className="admin-voucher-renew"
+                  type="button"
+                  onClick={() => { setUpdateError(null); setRenewVoucher(v); }}
+                >
+                  Atualizar
+                </button>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {renewVoucher && (
+        <div className="admin-modal-backdrop" role="presentation" onClick={() => !updating && setRenewVoucher(null)}>
+          <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <button className="admin-modal-close" type="button" onClick={() => setRenewVoucher(null)} disabled={updating}>×</button>
+            <h3 className="admin-modal-title">Atualizar voucher</h3>
+            <code className="admin-modal-code">{renewVoucher.codigo || "pendente"}</code>
+            {(() => {
+              const days = renewVoucher.data_expiracao
+                ? Math.ceil((new Date(renewVoucher.data_expiracao).getTime() - Date.now()) / 86400000)
+                : null;
+              if (days === null) return <p className="admin-modal-info">Sem data de vencimento.</p>;
+              if (days <= 0) return <p className="admin-modal-info admin-modal-info--warn">Voucher vencido há {Math.abs(days)} dia{Math.abs(days) !== 1 ? "s" : ""}.</p>;
+              return <p className="admin-modal-info">Falta{days === 1 ? "" : "m"} <strong>{days} dia{days !== 1 ? "s" : ""}</strong> para vencer.</p>;
+            })()}
+            {updateError && <p className="admin-modal-error">{updateError}</p>}
+            <button className="admin-modal-confirm" type="button" onClick={confirmUpdate} disabled={updating}>
+              {updating ? "Atualizando…" : "Atualizar"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showResult && updatedVoucher && (
+        <div className="admin-modal-backdrop" role="presentation">
+          <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h3 className="admin-modal-title">Voucher gerado</h3>
+            <code className="admin-modal-code">{updatedVoucher.codigo || "pendente"}</code>
+            <div className="admin-result-grid">
+              <div className="admin-result-row"><span>Status</span><strong>pendente</strong></div>
+              <div className="admin-result-row"><span>Plano</span><strong>{updatedVoucher.tempo_desc || "—"}</strong></div>
+              <div className="admin-result-row"><span>Vencimento</span><strong>{fmtDate(updatedVoucher.data_expiracao)}</strong></div>
+            </div>
+            <button
+              className="admin-modal-confirm admin-modal-confirm--ghost"
+              type="button"
+              onClick={() => { setShowResult(false); setUpdatedVoucher(null); void fetchVouchers(query); }}
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       )}
     </main>

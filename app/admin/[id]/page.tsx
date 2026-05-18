@@ -549,7 +549,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
                       </span>
                       {v.quota != null && (
                         <span>
-                          {Number.isFinite(Number(v.usos)) ? Number(v.usos) : 0} de {v.quota}{" "}
+                          {v.usos ?? "—"} de {v.quota}{" "}
                           {v.quota === 1 ? "acesso usado" : "acessos usados"}
                         </span>
                       )}
