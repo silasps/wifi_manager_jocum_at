@@ -23,6 +23,27 @@ async function requireAdmin(request: Request) {
   }
 }
 
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: "Configuração incompleta." }, { status: 500 });
+  }
+  const user = await requireAdmin(request);
+  if (!user) return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("vouchers")
+    .select("id, codigo, status, data_expiracao, tempo_desc, quota, usos, created_at, cliente_id")
+    .eq("id", params.id)
+    .maybeSingle();
+
+  if (error || !data) return NextResponse.json({ error: "Voucher não encontrado." }, { status: 404 });
+  return NextResponse.json({ voucher: data });
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } },

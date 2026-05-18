@@ -211,19 +211,23 @@ export default function AdminPage() {
 
   return (
     <main className="admin-page">
-      <header className="admin-topbar">
-        <a href="/home" className="admin-back">‹ Início</a>
-        <h1>Gestão de clientes</h1>
-        <a href="/admin/vouchers" className="admin-topbar-link">Vouchers</a>
+      <header className="admin-nav">
+        <a href="/home" className="admin-nav-back">‹ Início</a>
+        <div className="admin-nav-tabs">
+          <span className="admin-nav-tab active">Clientes</span>
+          <a href="/admin/vouchers" className="admin-nav-tab">Vouchers</a>
+        </div>
       </header>
 
-      {stats && (
+      {stats ? (
         <div className="admin-donut-section">
           <DonutChart
             ativos={counts.ativos} vencendo={counts.vencendo} inativos={counts.inativos}
             filter={chartFilter} onFilter={setChartFilter}
           />
         </div>
+      ) : (
+        <div className="skeleton skeleton-donut" />
       )}
 
       <div className="admin-search-wrap">
@@ -240,7 +244,11 @@ export default function AdminPage() {
       {message && <p className="admin-message">{message}</p>}
 
       {loading ? (
-        <p className="admin-loading">Buscando…</p>
+        <div className="admin-client-list">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton skeleton-card" />
+          ))}
+        </div>
       ) : clients.length === 0 ? (
         <p className="admin-empty">Nenhum cliente encontrado.</p>
       ) : (

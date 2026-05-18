@@ -24,10 +24,19 @@ type Voucher = {
   data_expiracao?: string | null;
   tempo_desc?: string | null;
   quota?: number | null;
-  usos?: number | null;
+  usos?: string | number | null;
   qtdObreiros?: number | null;
   created_at?: string | null;
 };
+
+function parseUsos(usos?: string | number | null): { used: number; total: number } | null {
+  if (usos == null) return null;
+  const s = String(usos);
+  const [a, b] = s.split("/");
+  if (b !== undefined) return { used: Number(a) || 0, total: Number(b) || 0 };
+  const n = Number(s);
+  return Number.isFinite(n) ? { used: n, total: n } : null;
+}
 
 type Financa = {
   id?: string;
@@ -170,12 +179,25 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   const [updatedVoucher, setUpdatedVoucher] = useState<Voucher | null>(null);
   const [showResult, setShowResult] = useState(false);
   const tokenRef = useRef<string | null>(null);
+  const pendingVoucherIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (countdown === null) return;
     if (countdown === 0) {
       setCountdown(null);
-      setShowResult(true);
+      const id = pendingVoucherIdRef.current;
+      if (id && tokenRef.current) {
+        const tok = tokenRef.current;
+        fetch(`/api/admin/vouchers/${id}`, { headers: { Authorization: `Bearer ${tok}` }, cache: "no-store" })
+          .then((r) => r.json())
+          .then((d: { voucher?: Voucher }) => {
+            if (d.voucher) setUpdatedVoucher(d.voucher);
+            setShowResult(true);
+          })
+          .catch(() => setShowResult(true));
+      } else {
+        setShowResult(true);
+      }
       return;
     }
     const t = setTimeout(() => setCountdown((c) => c !== null ? c - 1 : null), 1000);
@@ -294,7 +316,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
 
     const data = (await res.json()) as { ok?: boolean; error?: string };
     if (data.ok) {
-      setUpdatedVoucher({ ...renewVoucher, tempo_desc: newTempDesc, status: "pendente" });
+      pendingVoucherIdRef.current = renewVoucher.id ?? null;
       setRenewVoucher(null);
       setCountdown(20);
     } else {
@@ -547,12 +569,11 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
                           return <em> · {d} dia{d !== 1 ? "s" : ""} restantes</em>;
                         })()}
                       </span>
-                      {v.quota != null && (
-                        <span>
-                          {v.usos ?? "—"} de {v.quota}{" "}
-                          {v.quota === 1 ? "acesso usado" : "acessos usados"}
-                        </span>
-                      )}
+                      {(() => {
+                        const u = parseUsos(v.usos);
+                        if (!u) return null;
+                        return <span>{u.used} de {u.total} {u.total === 1 ? "acesso usado" : "acessos usados"}</span>;
+                      })()}
                       {isMinistry && v.qtdObreiros != null && v.qtdObreiros > 0 && (
                         <span>{v.qtdObreiros} {v.qtdObreiros === 1 ? "obreiro" : "obreiros"}</span>
                       )}
@@ -684,7 +705,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
             <div className="admin-result-grid">
               <div className="admin-result-row">
                 <span>Status</span>
-                <strong>pendente</strong>
+                <strong>{updatedVoucher.status || "—"}</strong>
               </div>
               <div className="admin-result-row">
                 <span>Plano</span>
@@ -694,12 +715,16 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
                 <span>Vencimento</span>
                 <strong>{fmtDate(updatedVoucher.data_expiracao)}</strong>
               </div>
-              {updatedVoucher.quota != null && (
-                <div className="admin-result-row">
-                  <span>Acessos</span>
-                  <strong>{updatedVoucher.quota}</strong>
-                </div>
-              )}
+              {(() => {
+                const u = parseUsos(updatedVoucher.usos);
+                if (!u) return null;
+                return (
+                  <div className="admin-result-row">
+                    <span>Acessos</span>
+                    <strong>{u.used} de {u.total}</strong>
+                  </div>
+                );
+              })()}
             </div>
 
             {(() => {

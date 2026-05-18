@@ -1916,6 +1916,58 @@ input:disabled {
   color: #fff7ef;
 }
 
+/* Nav with tabs */
+
+.admin-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 0;
+  margin-bottom: 4px;
+}
+
+.admin-nav-back {
+  color: rgba(255, 255, 255, 0.45);
+  text-decoration: none;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.admin-nav-back:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.admin-nav-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.admin-nav-tab {
+  padding: 7px 18px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-nav-tab:hover:not(.active) {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.admin-nav-tab.active {
+  background: rgba(255, 121, 42, 0.2);
+  color: #ff792a;
+}
+
 .admin-search-wrap {
   padding: 0 16px 16px;
 }
@@ -2180,6 +2232,31 @@ input:disabled {
   padding: 4px 10px;
   border: 1px solid rgba(255, 121, 42, 0.3);
   border-radius: 8px;
+}
+
+/* Skeleton loading */
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 75%);
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.4s infinite linear;
+  border-radius: 6px;
+}
+
+.skeleton-donut {
+  height: 100px;
+  border-radius: 12px;
+  margin: 16px 16px 4px;
+}
+
+.skeleton-card {
+  border-radius: 10px;
+  height: 72px;
 }
 
 /* Delete button */

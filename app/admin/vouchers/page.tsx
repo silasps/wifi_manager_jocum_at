@@ -12,11 +12,20 @@ type VoucherRow = {
   data_expiracao?: string | null;
   tempo_desc?: string | null;
   quota?: number | null;
-  usos?: number | null;
+  usos?: string | number | null;
   created_at?: string | null;
   cliente_id?: string | null;
   cliente?: { user_id?: string | null; nome?: string | null; email?: string | null } | null;
 };
+
+function parseUsos(usos?: string | number | null): { used: number; total: number } | null {
+  if (usos == null) return null;
+  const s = String(usos);
+  const [a, b] = s.split("/");
+  if (b !== undefined) return { used: Number(a) || 0, total: Number(b) || 0 };
+  const n = Number(s);
+  return Number.isFinite(n) ? { used: n, total: n } : null;
+}
 
 function voucherDot(v: VoucherRow): { color: "green" | "yellow" | "red"; label: string } {
   const exp = v.data_expiracao ? new Date(v.data_expiracao).getTime() : null;
@@ -148,10 +157,31 @@ export default function AdminVouchersPage() {
   const [showResult, setShowResult] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingVoucherIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (countdown === null) return;
-    if (countdown === 0) { setCountdown(null); setShowResult(true); return; }
+    if (countdown === 0) {
+      setCountdown(null);
+      // Fetch updated voucher and refresh list
+      const id = pendingVoucherIdRef.current;
+      if (id && tokenRef.current) {
+        const t = tokenRef.current;
+        fetch(`/api/admin/vouchers/${id}`, { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" })
+          .then((r) => r.json())
+          .then((d: { voucher?: VoucherRow }) => {
+            if (d.voucher) setUpdatedVoucher(d.voucher);
+            setShowResult(true);
+            setQuery("");
+            setChartFilter(null);
+            void fetchVouchers("", t);
+          })
+          .catch(() => { setShowResult(true); void fetchVouchers("", t); });
+      } else {
+        setShowResult(true);
+      }
+      return;
+    }
     const t = setTimeout(() => setCountdown((c) => c !== null ? c - 1 : null), 1000);
     return () => clearTimeout(t);
   }, [countdown]);
@@ -221,7 +251,7 @@ export default function AdminVouchersPage() {
     });
     const data = (await res.json()) as { ok?: boolean; error?: string };
     if (data.ok) {
-      setUpdatedVoucher({ ...renewVoucher, tempo_desc: `${safedays} dias`, status: "pendente" });
+      pendingVoucherIdRef.current = renewVoucher.id ?? null;
       setRenewVoucher(null);
       setCountdown(20);
     } else {
@@ -257,18 +287,23 @@ export default function AdminVouchersPage() {
 
   return (
     <main className="admin-page">
-      <header className="admin-topbar">
-        <a href="/admin" className="admin-back">‹ Clientes</a>
-        <h1>Vouchers</h1>
+      <header className="admin-nav">
+        <a href="/home" className="admin-nav-back">‹ Início</a>
+        <div className="admin-nav-tabs">
+          <a href="/admin" className="admin-nav-tab">Clientes</a>
+          <span className="admin-nav-tab active">Vouchers</span>
+        </div>
       </header>
 
-      {chartCounts && (
+      {chartCounts ? (
         <div className="admin-donut-section">
           <DonutChart
             ativos={chartCounts.ativos} vencendo={chartCounts.vencendo} inativos={chartCounts.inativos}
             filter={chartFilter} onFilter={setChartFilter}
           />
         </div>
+      ) : (
+        <div className="skeleton skeleton-donut" />
       )}
 
       <div className="admin-search-wrap">
@@ -285,7 +320,11 @@ export default function AdminVouchersPage() {
       {message && <p className="admin-message">{message}</p>}
 
       {loading ? (
-        <p className="admin-loading">Buscando…</p>
+        <div className="admin-client-list">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="skeleton skeleton-card" />
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
         <p className="admin-empty">Nenhum voucher encontrado.</p>
       ) : (
@@ -295,6 +334,7 @@ export default function AdminVouchersPage() {
             const inactive = dot.color === "red";
             const days = daysUntil(v.data_expiracao);
             const isExpired = inactive && v.data_expiracao && new Date(v.data_expiracao).getTime() <= Date.now();
+            const usosInfo = parseUsos(v.usos);
             return (
               <div
                 key={v.id || i}
@@ -322,8 +362,8 @@ export default function AdminVouchersPage() {
                     {isExpired ? `Vencido ${fmtDate(v.data_expiracao)}` : `Vence: ${fmtDate(v.data_expiracao)}`}
                     {!isExpired && days !== null && <em> · {days} dia{days !== 1 ? "s" : ""}</em>}
                   </span>
-                  {v.quota != null && (
-                    <span>{v.usos ?? "—"} de {v.quota} {v.quota === 1 ? "acesso usado" : "acessos usados"}</span>
+                  {usosInfo && (
+                    <span>{usosInfo.used} de {usosInfo.total} {usosInfo.total === 1 ? "acesso usado" : "acessos usados"}</span>
                   )}
                   {v.tempo_desc && <span>Plano: {v.tempo_desc}</span>}
                 </div>
@@ -380,14 +420,19 @@ export default function AdminVouchersPage() {
             <h3 className="admin-modal-title">Voucher gerado</h3>
             <code className="admin-modal-code">{updatedVoucher.codigo || "pendente"}</code>
             <div className="admin-result-grid">
-              <div className="admin-result-row"><span>Status</span><strong>pendente</strong></div>
+              <div className="admin-result-row"><span>Status</span><strong>{updatedVoucher.status || "—"}</strong></div>
               <div className="admin-result-row"><span>Plano</span><strong>{updatedVoucher.tempo_desc || "—"}</strong></div>
               <div className="admin-result-row"><span>Vencimento</span><strong>{fmtDate(updatedVoucher.data_expiracao)}</strong></div>
+              {(() => {
+                const u = parseUsos(updatedVoucher.usos);
+                if (!u) return null;
+                return <div className="admin-result-row"><span>Acessos</span><strong>{u.used} de {u.total}</strong></div>;
+              })()}
             </div>
             <button
               className="admin-modal-confirm admin-modal-confirm--ghost"
               type="button"
-              onClick={() => { setShowResult(false); setUpdatedVoucher(null); void fetchVouchers(query); }}
+              onClick={() => { setShowResult(false); setUpdatedVoucher(null); }}
             >
               Fechar
             </button>
