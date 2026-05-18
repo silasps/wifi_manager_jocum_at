@@ -79,3 +79,26 @@ export async function PATCH(
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return missingKey();
+
+  const user = await requireAdmin(request);
+  if (!user) return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+
+  const admin = createAdminClient();
+  const { id } = params;
+
+  // Delete related records first, then the client row, then the auth user
+  await admin.from("financas").delete().eq("cliente_id", id);
+  await admin.from("vouchers").delete().eq("cliente_id", id);
+  await admin.from("clientes").delete().eq("user_id", id);
+  const { error } = await admin.auth.admin.deleteUser(id);
+
+  if (error) return NextResponse.json({ error: "Erro ao excluir usuário." }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}

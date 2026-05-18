@@ -14,6 +14,7 @@ type ClientDetail = {
   tipo_plano?: string | null;
   tempo?: string | null;
   user_id?: string | null;
+  created_at?: string | null;
 };
 
 type Voucher = {
@@ -161,6 +162,9 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   const [renewVoucher, setRenewVoucher] = useState<Voucher | null>(null);
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [updatedVoucher, setUpdatedVoucher] = useState<Voucher | null>(null);
@@ -244,6 +248,23 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       setMessage(data.error || "Erro ao atualizar papel.");
     }
     setSaving(false);
+  };
+
+  const deleteClient = async () => {
+    if (!tokenRef.current) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const res = await fetch(`/api/admin/clients/${params.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenRef.current}` },
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (data.ok) {
+      window.location.href = "/admin";
+    } else {
+      setDeleteError(data.error || "Erro ao excluir.");
+      setDeleting(false);
+    }
   };
 
   const copyVoucher = async (voucher: Voucher) => {
@@ -380,6 +401,10 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
               <dt>Ativo</dt>
               <dd>{cliente.ativo ? "Sim" : "Não"}</dd>
             </div>
+            <div className="admin-field">
+              <dt>Membro desde</dt>
+              <dd>{fmtDate(cliente.created_at)}</dd>
+            </div>
           </dl>
 
           <div className="admin-papel-editor">
@@ -408,6 +433,14 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
             </div>
             {message && <p className="admin-message">{message}</p>}
           </div>
+
+          <button
+            className="admin-delete-button"
+            type="button"
+            onClick={() => { setDeleteError(null); setShowDeleteModal(true); }}
+          >
+            Excluir cliente
+          </button>
         </section>
 
         {/* ── Dados financeiros ── */}
@@ -538,6 +571,55 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
           )}
         </section>
       </div>
+
+      {/* ── Delete modal ── */}
+      {showDeleteModal && (
+        <div
+          className="admin-modal-backdrop"
+          role="presentation"
+          onClick={() => !deleting && setShowDeleteModal(false)}
+        >
+          <div
+            className="admin-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="admin-modal-close"
+              type="button"
+              onClick={() => setShowDeleteModal(false)}
+              aria-label="Fechar"
+              disabled={deleting}
+            >
+              ×
+            </button>
+            <h3 id="delete-title" className="admin-modal-title">Excluir cliente</h3>
+            <p className="admin-modal-info admin-modal-info--warn">
+              Tem certeza que deseja excluir <strong>{cliente.nome || "este cliente"}</strong>?
+              Todos os dados serão removidos permanentemente. Esta ação é <strong>irreversível</strong>.
+            </p>
+            {deleteError && <p className="admin-modal-error">{deleteError}</p>}
+            <button
+              className="admin-modal-confirm admin-modal-confirm--danger"
+              type="button"
+              onClick={deleteClient}
+              disabled={deleting}
+            >
+              {deleting ? "Excluindo…" : "Sim, excluir permanentemente"}
+            </button>
+            <button
+              className="admin-modal-confirm admin-modal-confirm--ghost"
+              type="button"
+              onClick={() => setShowDeleteModal(false)}
+              disabled={deleting}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Renewal modal ── */}
       {renewVoucher && (

@@ -2042,6 +2042,221 @@ input:disabled {
   color: rgba(255, 255, 255, 0.35);
 }
 
+.admin-tag--warn {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+}
+
+/* Donut chart */
+
+.admin-donut-section {
+  padding: 16px 16px 4px;
+}
+
+.admin-donut-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: rgba(33, 33, 34, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.admin-donut-chart-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.admin-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.admin-donut-center strong {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff7ef;
+  line-height: 1;
+}
+
+.admin-donut-center small {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 1px;
+}
+
+.admin-donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.admin-donut-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.7);
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+  width: 100%;
+}
+
+.admin-donut-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.admin-donut-filter-btn.active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.admin-donut-clear {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid rgba(255, 121, 42, 0.3);
+  border-radius: 8px;
+  color: rgba(255, 121, 42, 0.85);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 10px;
+  margin-top: 4px;
+  transition: background 0.15s;
+}
+
+.admin-donut-clear:hover {
+  background: rgba(255, 121, 42, 0.1);
+}
+
+.admin-donut-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Client card voucher line */
+
+.admin-client-voucher {
+  font-size: 0.72rem !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+/* Topbar link */
+
+.admin-topbar-link {
+  font-size: 0.8rem;
+  color: rgba(255, 121, 42, 0.85);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 121, 42, 0.3);
+  border-radius: 8px;
+}
+
+/* Delete button */
+
+.admin-delete-button {
+  margin-top: 16px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.admin-delete-button:hover {
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.admin-modal-confirm--danger {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #f87171 !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+}
+
+.admin-modal-confirm--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25) !important;
+}
+
+/* Voucher card (list page) */
+
+.admin-voucher-card {
+  background: rgba(33, 33, 34, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-voucher-client-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 2px;
+}
+
+.admin-voucher-client-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff7ef;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-voucher-client-email {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
 /* Detail page */
 
 .admin-detail-stack {
