@@ -250,7 +250,13 @@ function PlanSummary({
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("login");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window !== "undefined") {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t === "signup") return "signup";
+    }
+    return "login";
+  });
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [signup, setSignup] = useState({

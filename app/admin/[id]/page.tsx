@@ -48,6 +48,108 @@ type Financa = {
 const twoDays = 172800000;
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
+type Category = "Obreiro" | "Aluno" | "Casal" | "Ministério" | "";
+type Plan = "Diário" | "Mensal" | "Anual" | "";
+
+const accessPlans = [
+  { value: "Diário" as const, title: "Por dias",  description: "Para visitas e períodos curtos",  unit: "dias"  },
+  { value: "Mensal" as const, title: "Por meses", description: "Para uma temporada na base",      unit: "meses" },
+  { value: "Anual"  as const, title: "Por anos",  description: "Para acesso de longo prazo",      unit: "anos"  },
+];
+
+function timeLabel(plan: Plan, amount: string) {
+  const v = Number(amount || 1);
+  if (plan === "Diário") return v === 1 ? "1 dia"  : `${v} dias`;
+  if (plan === "Anual")  return v === 1 ? "1 ano"  : `${v} anos`;
+  return v === 1 ? "1 mês" : `${v} meses`;
+}
+function durationLabel(plan: Plan) {
+  if (plan === "Diário") return "Quantos dias de acesso?";
+  if (plan === "Anual")  return "Quantos anos de acesso?";
+  if (plan === "Mensal") return "Quantos meses de acesso?";
+  return "Duração do acesso";
+}
+function durationUnit(plan: Plan, value?: string) {
+  const n = Number(value || 0);
+  if (plan === "Diário") return n === 1 ? "dia"  : "dias";
+  if (plan === "Mensal") return n === 1 ? "mês"  : "meses";
+  if (plan === "Anual")  return n === 1 ? "ano"  : "anos";
+  return "tempo";
+}
+function planDiscountHint(category: Category, plan: Plan, amount: string): string {
+  const tempo = Number(amount || 0);
+  if (plan === "Diário") {
+    if (!tempo)       return "desconto a partir de 15 dias";
+    if (tempo >= 20)  return "curta temporada R$ 50";
+    if (tempo >= 15)  return "curta temporada R$ 40";
+    return "desconto a partir de 15 dias";
+  }
+  if (plan === "Anual") return category === "Ministério" ? "25% off na base" : "10% off";
+  if (plan !== "Mensal") return "";
+  if (category === "Ministério") {
+    if (!tempo)       return "20% off a partir de 3 meses";
+    if (tempo >= 12)  return "25% off na base";
+    if (tempo >= 3)   return "20% off na base";
+    return "20% off a partir de 3 meses";
+  }
+  if (category === "Casal") {
+    if (tempo === 3)  return "pacote com desconto";
+    if (tempo > 3)    return "10% off";
+    return "10% off a partir de 3 meses";
+  }
+  if (category === "Aluno" || category === "Obreiro") {
+    if (tempo === 3)  return "R$ 10 off";
+    if (tempo > 3)    return "10% off";
+    return "10% off a partir de 3 meses";
+  }
+  return "";
+}
+function planUnitValue(category: Category, plan: Plan) {
+  if (plan === "Diário") return `${money.format(category === "Casal" ? 5 : 3)} / dia`;
+  if (plan === "Anual") {
+    if (category === "Ministério") return `${money.format(50 * 12 * 0.75)} / ano base`;
+    if (category === "Aluno")      return `${money.format(35 * 12 * 0.9)} / ano`;
+    if (category === "Casal")      return `${money.format(50 * 12 * 0.9)} / ano`;
+    return `${money.format(30 * 12 * 0.9)} / ano`;
+  }
+  if (category === "Aluno")    return `${money.format(35)} / mês`;
+  if (category === "Casal" || category === "Ministério") return `${money.format(50)} / mês`;
+  return `${money.format(30)} / mês`;
+}
+function planPrice(category: Category, plan: Plan, amount: string, people: string) {
+  const tempo = Math.max(0, Number(amount || 0));
+  const extras = Math.max(0, Number(people || 0) - 3);
+  let original = 0, final = 0;
+  if (!category || !plan || !tempo) return { original, final, discount: 0 };
+  if (plan === "Diário") {
+    const unit = category === "Casal" ? 5 : 3;
+    original = tempo * unit;
+    final = tempo >= 20 ? Math.min(original, 50) : tempo >= 15 ? Math.min(original, 40) : original;
+  } else if (plan === "Mensal") {
+    if (category === "Aluno")      original = tempo * 35;
+    if (category === "Obreiro")    original = tempo * 30;
+    if (category === "Casal")      original = tempo * 50;
+    if (category === "Ministério") original = tempo * 50 + extras * 15 * tempo;
+    final = original;
+    if (category === "Aluno" || category === "Obreiro") final = tempo === 3 ? original - 10 : tempo > 3 ? original * 0.9 : original;
+    if (category === "Casal")      final = tempo === 3 ? 135 : tempo > 3 ? original * 0.9 : original;
+    if (category === "Ministério") { const b = tempo * 50; final = (tempo >= 12 ? b * 0.75 : tempo >= 3 ? b * 0.8 : b) + extras * 15 * tempo; }
+  } else if (plan === "Anual") {
+    if (category === "Aluno")      original = 35 * 12 * tempo;
+    if (category === "Obreiro")    original = 30 * 12 * tempo;
+    if (category === "Casal")      original = 50 * 12 * tempo;
+    if (category === "Ministério") original = 50 * 12 * tempo + extras * 15 * 12 * tempo;
+    final = original;
+    if (category === "Aluno" || category === "Obreiro" || category === "Casal") final = original * 0.9;
+    if (category === "Ministério") final = 50 * 12 * tempo * 0.75 + extras * 15 * 12 * tempo;
+  }
+  return { original, final, discount: Math.max(0, original - final) };
+}
+function fmtValorMask(price: number): string {
+  const cents = Math.round(price * 100);
+  return `${Math.floor(cents / 100).toLocaleString("pt-BR")},${String(cents % 100).padStart(2, "0")}`;
+}
+
 function daysUntil(value?: string | null): number | null {
   if (!value) return null;
   const d = new Date(value);
@@ -179,6 +281,20 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   const [updatedVoucher, setUpdatedVoucher] = useState<Voucher | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [loadingResult, setLoadingResult] = useState(false);
+  const [showCreateVoucher, setShowCreateVoucher] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createPlanType, setCreatePlanType] = useState<Plan>("Mensal");
+  const [createAmount, setCreateAmount] = useState("1");
+  const [createQuota, setCreateQuota] = useState(6);
+  const [createValor, setCreateValor] = useState("");
+  type CreateStep = "plan" | "pix" | "card" | "cash" | "free";
+  const [createStep, setCreateStep] = useState<CreateStep>("plan");
+  const [createPixData, setCreatePixData] = useState<{ chargeId: string; qrCodeImage: string; copyPasteCode: string } | null>(null);
+  const [createPixCopied, setCreatePixCopied] = useState(false);
+  const [createCardData, setCreateCardData] = useState({ holderName: "", number: "", expiry: "", cvv: "", cpf: "" });
+  const [stepLoading, setStepLoading] = useState(false);
+  const createValorNumRef = useRef(0);
   const tokenRef = useRef<string | null>(null);
   const pendingVoucherIdRef = useRef<string | null>(null);
 
@@ -186,6 +302,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
     if (countdown === null) return;
     if (countdown === 0) {
       setCountdown(null);
+      void refreshVouchers();
       const id = pendingVoucherIdRef.current;
       if (id && tokenRef.current) {
         const tok = tokenRef.current;
@@ -250,6 +367,24 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
 
     void init();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!createPixData || !showCreateVoucher) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/asaas/pix/${createPixData.chargeId}`);
+        const d = (await res.json()) as { status?: string };
+        if (!cancelled && (d.status === "RECEIVED" || d.status === "CONFIRMED" || d.status === "RECEIVED_IN_CASH")) {
+          cancelled = true;
+          clearInterval(timer);
+          await doCreateVoucher("pix", createValorNumRef.current);
+        }
+      } catch { /* ignore transient errors */ }
+    };
+    const timer = setInterval(() => void poll(), 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [createPixData, showCreateVoucher]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const savePapel = async () => {
     if (!tokenRef.current || !cliente) return;
@@ -326,6 +461,105 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       setUpdateError(data.error || "Erro ao atualizar voucher.");
     }
     setUpdating(false);
+  };
+
+  const refreshVouchers = async () => {
+    if (!tokenRef.current) return;
+    const res = await fetch(`/api/admin/clients/${params.id}`, {
+      headers: { Authorization: `Bearer ${tokenRef.current}` },
+    });
+    const data = (await res.json()) as { vouchers?: Voucher[]; financas?: Financa[] };
+    if (data.vouchers) setVouchers(data.vouchers);
+    if (data.financas) setFinancas(data.financas);
+  };
+
+  const openCreateVoucher = () => {
+    setCreateError(null);
+    const cat = (cliente?.categoria || "Obreiro") as Category;
+    setCreateQuota(cat === "Casal" ? 12 : 6);
+    setCreatePlanType("Mensal");
+    setCreateAmount("1");
+    setCreateStep("plan");
+    setCreatePixData(null);
+    setCreatePixCopied(false);
+    const { final } = planPrice(cat, "Mensal", "1", "3");
+    setCreateValor(fmtValorMask(final));
+    setShowCreateVoucher(true);
+  };
+
+  const doCreateVoucher = async (forma_pagamento: string, valor_pago: number): Promise<boolean> => {
+    if (!tokenRef.current) return false;
+    setCreating(true);
+    const res = await fetch(`/api/admin/clients/${params.id}/voucher`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenRef.current}` },
+      body: JSON.stringify({ tempo_desc: timeLabel(createPlanType, createAmount), quota: createQuota, forma_pagamento, valor_pago }),
+    });
+    const data = (await res.json()) as { ok?: boolean; voucherId?: string; error?: string };
+    setCreating(false);
+    if (data.ok && data.voucherId) {
+      pendingVoucherIdRef.current = data.voucherId;
+      setShowCreateVoucher(false);
+      setCreateStep("plan");
+      setCreatePixData(null);
+      setCountdown(20);
+      return true;
+    }
+    setCreateError(data.error || "Erro ao criar voucher.");
+    return false;
+  };
+
+  const handlePaymentSelect = async (method: "pix" | "card" | "cash" | "free") => {
+    if (!createPlanType || !createAmount) { setCreateError("Selecione o plano e informe a duração."); return; }
+    setCreateError(null);
+    const valorNum = Number(createValor.replace(/\./g, "").replace(",", ".")) || 0;
+    createValorNumRef.current = valorNum;
+    if (method === "cash") { setCreateStep("cash"); return; }
+    if (method === "free") { setCreateStep("free"); return; }
+    if (method === "card") {
+      setCreateCardData((d) => ({ ...d, holderName: cliente?.nome || "" }));
+      setCreateStep("card");
+      return;
+    }
+    // PIX
+    setStepLoading(true);
+    setCreateStep("pix");
+    const res = await fetch("/api/asaas/pix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference: crypto.randomUUID(), nome: cliente?.nome || "", email: cliente?.email || "", whatsApp: cliente?.whatsApp || "", valor: valorNum }),
+    });
+    const pixRes = (await res.json()) as { chargeId?: string; qrCodeImage?: string; copyPasteCode?: string; error?: string };
+    setStepLoading(false);
+    if (!pixRes.chargeId || !pixRes.qrCodeImage || !pixRes.copyPasteCode) {
+      setCreateError(pixRes.error || "Não foi possível gerar o PIX.");
+      setCreateStep("plan");
+      return;
+    }
+    setCreatePixData({ chargeId: pixRes.chargeId, qrCodeImage: pixRes.qrCodeImage, copyPasteCode: pixRes.copyPasteCode });
+  };
+
+  const submitCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cliente) return;
+    setStepLoading(true);
+    setCreateError(null);
+    const valorNum = createValorNumRef.current;
+    const res = await fetch("/api/asaas/card", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reference: crypto.randomUUID(),
+        nome: cliente.nome || "", email: cliente.email || "", whatsApp: cliente.whatsApp || "",
+        valor: valorNum,
+        cardNumber: createCardData.number, cardHolderName: createCardData.holderName,
+        cardExpiry: createCardData.expiry, cardCvv: createCardData.cvv, cpf: createCardData.cpf,
+      }),
+    });
+    const data = (await res.json()) as { chargeId?: string; error?: string };
+    if (!data.chargeId) { setStepLoading(false); setCreateError(data.error || "Não foi possível processar o cartão."); return; }
+    await doCreateVoucher("cartao", valorNum);
+    setStepLoading(false);
   };
 
   if (countdown !== null) {
@@ -511,11 +745,21 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
         <section className="admin-section">
           <div className="admin-section-header">
             <h2 className="admin-section-title">Vouchers</h2>
-            {vouchers.length > 0 && (
-              <span className="admin-section-count">
-                {vouchers.length} {vouchers.length === 1 ? "voucher" : "vouchers"}
-              </span>
-            )}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {vouchers.length > 0 && (
+                <span className="admin-section-count">
+                  {vouchers.length} {vouchers.length === 1 ? "voucher" : "vouchers"}
+                </span>
+              )}
+              <button
+                className="admin-save-button"
+                type="button"
+                onClick={openCreateVoucher}
+                style={{ padding: "6px 14px", fontSize: "0.82rem" }}
+              >
+                + Criar
+              </button>
+            </div>
           </div>
           {vouchers.length === 0 ? (
             <p className="admin-empty">Nenhum voucher encontrado.</p>
@@ -691,6 +935,236 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
           </div>
         </div>
       )}
+
+      {/* ── Create voucher modal ── */}
+      {showCreateVoucher && (() => {
+        const cat = (cliente?.categoria || "Obreiro") as Category;
+        const valorNum = createValorNumRef.current;
+
+        const backBtn = (label = "‹ Voltar") => (
+          <button className="admin-modal-confirm admin-modal-confirm--ghost" type="button"
+            onClick={() => { setCreateStep("plan"); setCreatePixData(null); setCreateError(null); }}
+            disabled={creating}
+          >{label}</button>
+        );
+
+        // ── Pix step ──
+        if (createStep === "pix") return (
+          <div className="admin-modal-backdrop" role="presentation">
+            <div className="admin-modal admin-modal--form" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+              <h3 className="admin-modal-title">Pagamento Pix</h3>
+              <p className="admin-modal-info" style={{ textAlign: "center", fontSize: "0.82rem" }}>
+                {cliente?.nome} · {money.format(valorNum)} · {timeLabel(createPlanType, createAmount)}
+              </p>
+              {stepLoading ? (
+                <div className="admin-result-loading"><div className="admin-result-spinner" /><p>Gerando QR Code…</p></div>
+              ) : createPixData ? (<>
+                <img src={`data:image/png;base64,${createPixData.qrCodeImage}`} alt="QR Code PIX"
+                  style={{ width: 200, height: 200, display: "block", margin: "0 auto", borderRadius: 8 }} />
+                <div className="admin-currency-wrap" style={{ marginTop: 4 }}>
+                  <input readOnly value={createPixData.copyPasteCode}
+                    style={{ flex: 1, fontSize: 11, fontFamily: "monospace", padding: "8px 10px", border: "none", background: "transparent", color: "#fff7ef", minWidth: 0 }}
+                    onFocus={(e) => e.target.select()} />
+                  <button className="admin-save-button" type="button" style={{ borderRadius: "0 8px 8px 0", margin: 0 }}
+                    onClick={async () => { await navigator.clipboard.writeText(createPixData.copyPasteCode); setCreatePixCopied(true); setTimeout(() => setCreatePixCopied(false), 2000); }}>
+                    {createPixCopied ? "Copiado!" : "Copiar"}
+                  </button>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#f59e0b", display: "inline-block", animation: "pulse 1.5s infinite" }} />
+                  <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)" }}>Aguardando confirmação…</span>
+                </div>
+              </>) : null}
+              {createError && <p className="admin-modal-error">{createError}</p>}
+              {backBtn()}
+            </div>
+          </div>
+        );
+
+        // ── Card step ──
+        if (createStep === "card") {
+          const fmt4 = (v: string) => v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})(?=.)/g, "$1 ");
+          const fmtExp = (v: string) => { const d = v.replace(/\D/g, "").slice(0, 4); return d.length > 2 ? `${d.slice(0,2)}/${d.slice(2)}` : d; };
+          const fmtCpf = (v: string) => { const d = v.replace(/\D/g, "").slice(0,11); if (d.length<=3) return d; if (d.length<=6) return `${d.slice(0,3)}.${d.slice(3)}`; if (d.length<=9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`; return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`; };
+          const setCard = (k: keyof typeof createCardData) => (e: React.ChangeEvent<HTMLInputElement>) => setCreateCardData((d) => ({ ...d, [k]: e.target.value }));
+          return (
+            <div className="admin-modal-backdrop" role="presentation">
+              <div className="admin-modal admin-modal--form" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                <h3 className="admin-modal-title">Cartão de crédito</h3>
+                <p className="admin-modal-info" style={{ textAlign: "center", fontSize: "0.82rem" }}>
+                  {cliente?.nome} · {money.format(valorNum)} · {timeLabel(createPlanType, createAmount)}
+                </p>
+                <form className="form-stack" onSubmit={submitCard} style={{ width: "100%" }}>
+                  <label>Nome no cartão<input value={createCardData.holderName} onChange={setCard("holderName")} autoComplete="cc-name" required /></label>
+                  <label>Número<input value={createCardData.number} onChange={(e) => setCreateCardData((d) => ({ ...d, number: fmt4(e.target.value) }))} inputMode="numeric" placeholder="0000 0000 0000 0000" autoComplete="cc-number" required /></label>
+                  <div className="phone-row">
+                    <label>Validade<input value={createCardData.expiry} onChange={(e) => setCreateCardData((d) => ({ ...d, expiry: fmtExp(e.target.value) }))} inputMode="numeric" placeholder="MM/AA" autoComplete="cc-exp" required /></label>
+                    <label>CVV<input value={createCardData.cvv} onChange={setCard("cvv")} inputMode="numeric" maxLength={4} placeholder="000" autoComplete="cc-csc" required /></label>
+                  </div>
+                  <label>CPF do titular<input value={createCardData.cpf} onChange={(e) => setCreateCardData((d) => ({ ...d, cpf: fmtCpf(e.target.value) }))} inputMode="numeric" placeholder="000.000.000-00" required /></label>
+                  {createError && <p className="admin-modal-error">{createError}</p>}
+                  <button className="admin-modal-confirm" type="submit" disabled={stepLoading || creating}>
+                    {stepLoading || creating ? "Processando…" : `Pagar ${money.format(valorNum)}`}
+                  </button>
+                </form>
+                {backBtn()}
+              </div>
+            </div>
+          );
+        }
+
+        // ── Cash step ──
+        if (createStep === "cash") return (
+          <div className="admin-modal-backdrop" role="presentation" onClick={() => setCreateStep("plan")}>
+            <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+              <h3 className="admin-modal-title">Dinheiro em espécie</h3>
+              <div className="admin-result-grid" style={{ width: "100%" }}>
+                <div className="admin-result-row"><span>Cliente</span><strong>{cliente?.nome || "—"}</strong></div>
+                <div className="admin-result-row"><span>Plano</span><strong>{timeLabel(createPlanType, createAmount)}</strong></div>
+                <div className="admin-result-row"><span>Valor</span><strong style={{ color: "#4ade80" }}>{money.format(valorNum)}</strong></div>
+              </div>
+              <p className="admin-modal-info" style={{ fontSize: "0.82rem" }}>Confirme o recebimento do dinheiro para gerar o voucher.</p>
+              {createError && <p className="admin-modal-error">{createError}</p>}
+              <button className="admin-modal-confirm" type="button" disabled={creating}
+                onClick={() => void doCreateVoucher("dinheiro", valorNum)}>
+                {creating ? "Criando…" : "Confirmar recebimento"}
+              </button>
+              {backBtn("Cancelar")}
+            </div>
+          </div>
+        );
+
+        // ── Free step ──
+        if (createStep === "free") return (
+          <div className="admin-modal-backdrop" role="presentation" onClick={() => setCreateStep("plan")}>
+            <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+              <h3 className="admin-modal-title">Voucher gratuito</h3>
+              <div className="admin-result-grid" style={{ width: "100%" }}>
+                <div className="admin-result-row"><span>Cliente</span><strong>{cliente?.nome || "—"}</strong></div>
+                <div className="admin-result-row"><span>Plano</span><strong>{timeLabel(createPlanType, createAmount)}</strong></div>
+                <div className="admin-result-row"><span>Valor</span><strong>R$ 0,00</strong></div>
+              </div>
+              <p className="admin-modal-info admin-modal-info--warn" style={{ fontSize: "0.82rem" }}>Ao confirmar, o voucher será gerado sem cobrança.</p>
+              {createError && <p className="admin-modal-error">{createError}</p>}
+              <button className="admin-modal-confirm" type="button" disabled={creating}
+                onClick={() => void doCreateVoucher("gratuito", 0)}>
+                {creating ? "Criando…" : "Confirmar voucher gratuito"}
+              </button>
+              {backBtn("Cancelar")}
+            </div>
+          </div>
+        );
+
+        // ── Plan step (default) ──
+        const price = planPrice(cat, createPlanType, createAmount, "3");
+        const ready = Boolean(createPlanType && createAmount);
+        return (
+          <div className="admin-modal-backdrop" role="presentation" onClick={() => setShowCreateVoucher(false)}>
+            <div className="admin-modal admin-modal--form" role="dialog" aria-modal="true"
+              aria-labelledby="create-title" onClick={(e) => e.stopPropagation()}>
+              <button className="admin-modal-close" type="button" onClick={() => setShowCreateVoucher(false)}>×</button>
+              <h3 id="create-title" className="admin-modal-title">Criar voucher</h3>
+              <p className="admin-modal-info" style={{ fontSize: "0.82rem", textAlign: "center" }}>
+                {cliente?.nome || "Cliente"} · {cliente?.categoria || "—"}
+              </p>
+
+              <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+                <legend className="admin-create-label" style={{ marginBottom: 8 }}>Tempo de acesso desejado</legend>
+                <div className="billing-options">
+                  {accessPlans.map((plan) => {
+                    const hint = planDiscountHint(cat, plan.value, createAmount);
+                    return (
+                      <button key={plan.value} type="button" role="radio" aria-checked={createPlanType === plan.value}
+                        className={createPlanType === plan.value ? "plan-option selected" : "plan-option"}
+                        onClick={() => {
+                          const amt = plan.value === "Diário" ? "2" : "1";
+                          setCreatePlanType(plan.value);
+                          setCreateAmount(amt);
+                          const { final } = planPrice(cat, plan.value, amt, "3");
+                          setCreateValor(fmtValorMask(final));
+                        }}
+                      >
+                        {hint && <em className="discount-badge">{hint}</em>}
+                        <strong>{plan.title}</strong>
+                        <small className="unit-price">{planUnitValue(cat, plan.value)}</small>
+                        <span>{plan.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <div className="admin-create-field">
+                <label className="admin-create-label">{durationLabel(createPlanType)}</label>
+                <span className="duration-input">
+                  <input type="text" inputMode="numeric" value={createAmount} disabled={!createPlanType}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      setCreateAmount(val);
+                      if (val && createPlanType) { const { final } = planPrice(cat, createPlanType, val, "3"); setCreateValor(fmtValorMask(final)); }
+                    }}
+                    onBlur={() => { if (createPlanType === "Diário" && Number(createAmount) < 2) setCreateAmount("2"); }}
+                  />
+                  <span>{durationUnit(createPlanType, createAmount)}</span>
+                </span>
+              </div>
+
+              <div className="package-summary">
+                <div>
+                  <p>Resumo do plano</p>
+                  <ul>
+                    <li className="done"><span>✓</span>{cat}</li>
+                    <li className={createPlanType ? "done" : ""}><span>{createPlanType ? "✓" : "○"}</span>{createPlanType || "Escolha o tempo"}</li>
+                    <li className={createAmount ? "done" : ""}><span>{createAmount ? "✓" : "○"}</span>{createAmount ? timeLabel(createPlanType, createAmount) : "Informe a duração"}</li>
+                  </ul>
+                </div>
+                <div>
+                  {ready ? (<>
+                    {price.discount > 0 && <span className="old-price">{money.format(price.original)}</span>}
+                    <strong>{money.format(price.final)}</strong>
+                    <span>{price.discount > 0 ? `Desconto de ${money.format(price.discount)}` : "Sem desconto"}</span>
+                    <small>{cat} · {timeLabel(createPlanType, createAmount)}</small>
+                  </>) : (<><strong>--</strong><span>Preencha acima</span></>)}
+                </div>
+              </div>
+
+              <div className="admin-create-field">
+                <span className="admin-create-label">Dispositivos (quota)</span>
+                <input className="admin-create-input" type="number" min={1} max={200} value={createQuota}
+                  onChange={(e) => setCreateQuota(Math.max(1, Number(e.target.value) || 1))} />
+              </div>
+
+              <div className="admin-create-field">
+                <span className="admin-create-label">Valor a cobrar</span>
+                <div className="admin-currency-wrap">
+                  <span className="admin-currency-prefix">R$</span>
+                  <input className="admin-create-input admin-create-input--currency" type="text" inputMode="numeric"
+                    placeholder="0,00" value={createValor}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "").slice(0, 9);
+                      if (!digits) { setCreateValor(""); return; }
+                      const cents = parseInt(digits, 10);
+                      setCreateValor(`${Math.floor(cents / 100).toLocaleString("pt-BR")},${String(cents % 100).padStart(2, "0")}`);
+                    }} />
+                </div>
+              </div>
+
+              {createError && <p className="admin-modal-error">{createError}</p>}
+
+              <p className="admin-create-label" style={{ textAlign: "center" }}>Como o cliente vai pagar?</p>
+              <div className="admin-payment-opts">
+                {([["pix","Pix"],["card","Cartão"],["cash","Dinheiro"],["free","Gratuito"]] as const).map(([m, label]) => (
+                  <button key={m} type="button"
+                    className="admin-payment-btn"
+                    onClick={() => void handlePaymentSelect(m)}
+                    disabled={!ready || stepLoading}
+                  >{label}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Result modal ── */}
       {showResult && (
