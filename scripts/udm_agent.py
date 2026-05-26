@@ -8,6 +8,8 @@ import datetime
 import re
 import time
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 # ===============================
 # CONFIGURAÇÕES
 # ===============================
@@ -29,6 +31,14 @@ QUOTA_KB = 30 * 1024
 UNIFI_API_KEY = os.environ.get("UNIFI_API_KEY", "HgTTzA_MRl6eAlOBEpUbhkUzKCC0EpEx")
 UNIFI_HOST = "localhost"
 UNIFI_PORT = 443
+
+# ===============================
+# CONFIGURAÇÕES DO PORTAL REDIRECT
+# ===============================
+# Domínio da sua plataforma no Vercel
+PORTAL_EXTERNO_URL = "https://wifi-manager-react.vercel.app"
+# Porta que a UDM usa para redirecionar clientes ao portal externo
+PORTAL_REDIRECT_PORT = 8880
 
 # Na UDM local normalmente funciona com o primeiro prefixo.
 # Mantive fallback para /v1 direto caso sua versão exponha assim.
@@ -406,8 +416,38 @@ def processar_autorizacoes():
     except Exception as e:
         log(f"❌ Erro em processar_autorizacoes: {e}")
 
+# ===============================
+# SERVIDOR DE REDIRECIONAMENTO
+# ===============================
+class PortalRedirectHandler(BaseHTTPRequestHandler):
+    """
+    Recebe requisições da UDM na porta 8880 e redireciona para o Vercel.
+    A UDM envia: GET /?id=AA:BB:CC&url=http://...&ap=...&ssid=...
+    Redirecionamos para: https://wifi-manager-react.vercel.app/hotspot?id=...
+    """
+    def do_GET(self):
+        destino = f"{PORTAL_EXTERNO_URL}/hotspot{self.path}"
+        self.send_response(302)
+        self.send_header("Location", destino)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        log(f"[redirect] {self.address_string()} → {args[0] if args else ''}")
+
+
+def iniciar_servidor_redirect():
+    try:
+        servidor = HTTPServer(("0.0.0.0", PORTAL_REDIRECT_PORT), PortalRedirectHandler)
+        log(f"✅ Servidor de redirecionamento ativo na porta {PORTAL_REDIRECT_PORT}")
+        servidor.serve_forever()
+    except OSError as e:
+        log(f"❌ Não foi possível iniciar o servidor de redirecionamento: {e}")
+
+
 # Loop infinito para rodar a cada 20 segundos
 if __name__ == "__main__":
+    threading.Thread(target=iniciar_servidor_redirect, daemon=True).start()
     while True:
         processar_vouchers()
         processar_autorizacoes()
