@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../utils/supabase/client";
 
 type Tab = "login" | "signup";
@@ -250,13 +250,12 @@ function PlanSummary({
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window !== "undefined") {
-      const t = new URLSearchParams(window.location.search).get("tab");
-      if (t === "signup") return "signup";
-    }
-    return "login";
-  });
+  const [tab, setTab] = useState<Tab>("login");
+
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "signup") setTab("signup");
+  }, []);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [signup, setSignup] = useState({

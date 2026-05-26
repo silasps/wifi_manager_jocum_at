@@ -3399,3 +3399,489 @@ input:disabled {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ── Voucher pending banner ── */
+.voucher-pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+  padding: 12px 14px;
+}
+
+.voucher-pending-spinner {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(251, 191, 36, 0.25);
+  border-top-color: #fbbf24;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.voucher-pending-banner strong {
+  display: block;
+  color: #fde68a;
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.voucher-pending-banner span {
+  display: block;
+  color: #a9a19a;
+  font-size: 0.78rem;
+  margin-top: 1px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Voucher status dot — pending variant ── */
+.voucher-status-dot.pending {
+  background: #fbbf24;
+}
+
+.voucher-status-dot.pulsing {
+  animation: pulse 1.4s infinite;
+}
+
+/* ── Voucher activated dialog ── */
+.voucher-activated-dialog {
+  width: min(calc(100vw - 28px), 400px);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 12px;
+  background: rgba(23, 23, 24, 0.98);
+  padding: 24px 20px;
+  display: grid;
+  gap: 16px;
+  text-align: center;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.5);
+}
+
+.activated-check {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: rgba(74, 222, 128, 0.15);
+  border: 2px solid rgba(74, 222, 128, 0.5);
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  color: #4ade80;
+}
+
+.activated-title {
+  margin: 0;
+  font-size: 1.3rem;
+  color: #fff7ef;
+}
+
+.activated-subtitle {
+  margin: -8px 0 0;
+  color: #9d958e;
+  font-size: 0.88rem;
+}
+
+.activated-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid rgba(255, 121, 42, 0.4);
+  border-radius: 8px;
+  background: #111112;
+  padding: 4px 6px 4px 14px;
+}
+
+.activated-code {
+  flex: 1;
+  font-family: "Courier New", monospace;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #ff792a;
+  letter-spacing: 0.08em;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activated-copy-btn {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #ff792a;
+  color: #160f0a;
+  font-weight: 900;
+  font-size: 0.82rem;
+}
+
+.activated-steps {
+  margin: 0;
+  padding: 0 0 0 18px;
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  color: #cfc8c1;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.activated-steps li strong {
+  color: #fff7ef;
+}
+
+/* ── Hotspot speed compare ── */
+.hotspot-speed-compare {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(33, 33, 34, 0.9);
+  padding: 14px 16px;
+}
+
+.speed-col {
+  flex: 1;
+  display: grid;
+  gap: 3px;
+  text-align: center;
+}
+
+.speed-label {
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.speed-free .speed-label { color: #9d958e; }
+.speed-premium .speed-label { color: #ff792a; }
+
+.speed-value {
+  font-size: 1.5rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.speed-free .speed-value { color: #746d67; }
+.speed-premium .speed-value { color: #fff7ef; }
+
+.speed-desc {
+  font-size: 0.72rem;
+  color: #746d67;
+}
+
+.speed-premium .speed-desc { color: #cfc8c1; }
+
+.speed-divider {
+  font-size: 0.72rem;
+  font-weight: 950;
+  color: #746d67;
+  padding: 0 4px;
+}
+
+/* ─── Hotspot: estados de carregamento / transição ─── */
+
+.hotspot-state-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 220px;
+  text-align: center;
+  color: #fff7ef;
+  padding: 24px;
+}
+
+.hotspot-state-center strong {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.hotspot-state-sub {
+  font-size: 0.85rem;
+  color: #cfc8c1;
+}
+
+.hotspot-spinner {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255,121,42,0.25);
+  border-top-color: #ff792a;
+  border-radius: 50%;
+  animation: hotspot-spin 0.8s linear infinite;
+}
+
+@keyframes hotspot-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Hotspot: form de login inline (Tela D) ─── */
+
+.hotspot-login-inline {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 20px 20px 24px;
+  margin: 0 16px 24px;
+}
+
+.hotspot-login-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #cfc8c1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 14px;
+}
+
+.hotspot-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hotspot-login-input {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 0.9rem;
+  color: #fff7ef;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.hotspot-login-input::placeholder { color: #746d67; }
+.hotspot-login-input:focus { border-color: #ff792a; }
+
+.hotspot-login-error {
+  font-size: 0.8rem;
+  color: #ff6b6b;
+  margin: 0;
+}
+
+.hotspot-login-btn {
+  background: #ff792a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.hotspot-login-btn:hover { background: #e06820; }
+.hotspot-login-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ─── Home: banner captive portal ─── */
+
+.captive-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 121, 42, 0.12);
+  border: 1px solid rgba(255, 121, 42, 0.35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.captive-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.captive-banner-text strong {
+  font-size: 0.9rem;
+  color: #fff7ef;
+}
+
+.captive-banner-text span {
+  font-size: 0.78rem;
+  color: #cfc8c1;
+}
+
+.captive-banner-btn {
+  flex-shrink: 0;
+  background: #ff792a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.captive-banner-btn:hover { background: #e06820; }
+
+/* ── Hotspot portal: estados centrados ── */
+.hsp-center-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 20px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.hsp-center-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 16px;
+}
+
+.hsp-big-spinner {
+  width: 48px !important;
+  height: 48px !important;
+  border-width: 4px !important;
+}
+
+.hsp-center-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f5f0eb;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.hsp-center-sub {
+  font-size: 0.95rem;
+  color: #9c948d;
+  margin: 0;
+  max-width: 280px;
+}
+
+/* ── Tela de sucesso ── */
+.hsp-success-card {
+  gap: 16px;
+}
+
+.hsp-success-logo {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  border-radius: 20px;
+  margin-bottom: 4px;
+}
+
+.hsp-check-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.15);
+  border: 2px solid #22c55e;
+  color: #22c55e;
+  font-size: 2rem;
+  font-weight: 700;
+  animation: hsp-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes hsp-pop {
+  from { transform: scale(0.3); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+.hsp-success-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #f5f0eb;
+  margin: 0;
+}
+
+.hsp-success-text {
+  font-size: 1rem;
+  color: #9c948d;
+  margin: 0;
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+.hsp-success-countdown {
+  font-size: 0.85rem;
+  color: #746d67;
+  margin: 0;
+}
+
+/* ── Tela D: login inline ── */
+.hsp-login-section {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 16px 8px;
+}
+
+.hsp-login-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #746d67;
+  text-align: center;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hsp-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hsp-login-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: #1a1917;
+  border: 1px solid #2e2b27;
+  border-radius: 10px;
+  color: #f5f0eb;
+  font-size: 0.95rem;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.hsp-login-input::placeholder { color: #746d67; }
+.hsp-login-input:focus { border-color: #ff792a; }
+
+.hsp-login-error {
+  font-size: 0.85rem;
+  color: #f87171;
+  margin: 0;
+  text-align: center;
+}
+
+.hsp-login-btn {
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid #ff792a;
+  border-radius: 10px;
+  color: #ff792a;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-top: 2px;
+}
+.hsp-login-btn:hover { background: rgba(255,121,42,0.12); }
+.hsp-login-btn:disabled { opacity: 0.5; cursor: default; }

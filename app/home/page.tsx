@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../utils/supabase/client";
+
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.split(";").find((c) => c.trim().startsWith(name + "="));
+  return match ? decodeURIComponent(match.split("=")[1].trim()) : null;
+}
+
+function deleteCookie(name: string) {
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
+}
 
 type Cliente = {
   nome?: string | null;
@@ -10,6 +20,7 @@ type Cliente = {
 };
 
 type Voucher = {
+  id?: string | null;
   codigo?: string | null;
   status?: string | null;
   data_expiracao?: string | null;
@@ -55,7 +66,8 @@ function getVoucherStatus(voucher?: Voucher | null): VoucherStatus {
   return "Em dia";
 }
 
-function getVoucherRowStatus(voucher: Voucher): { color: "green" | "yellow" | "red"; label: string } {
+function getVoucherRowStatus(voucher: Voucher): { color: "green" | "yellow" | "red" | "pending"; label: string } {
+  if (voucher.status === "pendente") return { color: "pending", label: "Ativando" };
   const expiration = parseDate(voucher.data_expiracao)?.getTime();
   if (!expiration) return { color: "red", label: "Sem data" };
   const now = Date.now();
@@ -74,10 +86,16 @@ export default function HomePage() {
   const [openTipIndex, setOpenTipIndex] = useState<number | null>(null);
   const [copiedCode, setCopiedCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [activatedVoucher, setActivatedVoucher] = useState<Voucher | null>(null);
+  const [captiveMac, setCaptiveMac] = useState<string | null>(null);
+  const [captiveUrl, setCaptiveUrl] = useState<string>("http://www.google.com");
+  const [captiveConnecting, setCaptiveConnecting] = useState(false);
+  const seenPendingIds = useRef<Set<string>>(new Set());
 
   const currentVoucher = vouchers[0] ?? null;
   const voucherStatus = useMemo(() => getVoucherStatus(currentVoucher), [currentVoucher]);
   const ministryPeople = currentVoucher?.qtdObreiros ?? currentVoucher?.qtd_obreiros ?? 3;
+  const hasPendingVoucher = vouchers.some(v => v.status === "pendente");
 
   useEffect(() => {
     let alive = true;
@@ -118,6 +136,89 @@ export default function HomePage() {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    const mac = getCookie("captive_mac");
+    const url = getCookie("captive_url") ?? "http://www.google.com";
+    if (mac) {
+      setCaptiveMac(mac);
+      setCaptiveUrl(url);
+    }
+  }, []);
+
+  useEffect(() => {
+    vouchers.forEach(v => {
+      if (v.status === "pendente" && v.id) seenPendingIds.current.add(v.id);
+    });
+  }, [vouchers]);
+
+  useEffect(() => {
+    if (!hasPendingVoucher || loading) return;
+    let alive = true;
+    const interval = setInterval(async () => {
+      if (!alive) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !alive) return;
+      const { data } = await supabase
+        .from("vouchers")
+        .select("*")
+        .eq("cliente_id", user.id)
+        .order("data_expiracao", { ascending: false });
+      if (!data || !alive) return;
+      const activated = (data as Voucher[]).find(
+        v => v.status === "criado" && v.id && seenPendingIds.current.has(v.id)
+      );
+      if (activated) {
+        seenPendingIds.current.delete(activated.id!);
+        setActivatedVoucher(activated);
+      }
+      setVouchers(data as Voucher[]);
+    }, 5000);
+    return () => { alive = false; clearInterval(interval); };
+  }, [hasPendingVoucher, loading]);
+
+  const handleCaptiveConnect = async () => {
+    if (!captiveMac || captiveConnecting) return;
+    setCaptiveConnecting(true);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setCaptiveConnecting(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/hotspot/authorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ mac: captiveMac }),
+      });
+      const data = await res.json();
+
+      if (data.status === "autorizado") {
+        deleteCookie("captive_mac");
+        deleteCookie("captive_url");
+        window.location.href = captiveUrl;
+        return;
+      }
+
+      if (data.id) {
+        const poll = setInterval(async () => {
+          const pollRes = await fetch(`/api/hotspot/authorize/${data.id}`);
+          if (!pollRes.ok) return;
+          const pollData = await pollRes.json();
+          if (pollData.status === "autorizado") {
+            clearInterval(poll);
+            deleteCookie("captive_mac");
+            deleteCookie("captive_url");
+            window.location.href = captiveUrl;
+          }
+        }, 3000);
+      }
+    } catch {
+      setCaptiveConnecting(false);
+    }
+  };
 
   const copyVoucher = async (code?: string | null) => {
     if (!code) return;
@@ -172,6 +273,38 @@ export default function HomePage() {
                 </div>
               </section>
 
+              {captiveMac && voucherStatus === "Em dia" && !captiveConnecting && (
+                <div className="captive-banner" role="status">
+                  <div className="captive-banner-text">
+                    <strong>Conectar à rede premium</strong>
+                    <span>Seu voucher está ativo. Toque para liberar o acesso.</span>
+                  </div>
+                  <button className="captive-banner-btn" type="button" onClick={handleCaptiveConnect}>
+                    Conectar
+                  </button>
+                </div>
+              )}
+
+              {captiveConnecting && (
+                <div className="voucher-pending-banner" role="status">
+                  <span className="voucher-pending-spinner" aria-hidden="true" />
+                  <div>
+                    <strong>Liberando acesso à rede…</strong>
+                    <span>Aguarde alguns segundos.</span>
+                  </div>
+                </div>
+              )}
+
+              {hasPendingVoucher && (
+                <div className="voucher-pending-banner" role="status">
+                  <span className="voucher-pending-spinner" aria-hidden="true" />
+                  <div>
+                    <strong>Ativando seu acesso…</strong>
+                    <span>O voucher está sendo gerado, aguarde alguns instantes.</span>
+                  </div>
+                </div>
+              )}
+
               {(voucherStatus === "Vencido" || voucherStatus === "2 dias") && (
                 <button
                   className={`home-alert ${voucherStatus === "Vencido" ? "danger" : "warning"}`}
@@ -211,7 +344,7 @@ export default function HomePage() {
                             type="button"
                             aria-label={rowStatus.label}
                           >
-                            <span className={`voucher-status-dot ${rowStatus.color}`} aria-hidden="true" />
+                            <span className={`voucher-status-dot ${rowStatus.color}${rowStatus.color === "pending" ? " pulsing" : ""}`} aria-hidden="true" />
                             <span className="voucher-dot-tip" role="tooltip">{rowStatus.label}</span>
                           </button>
                           <button onClick={() => copyVoucher(voucher.codigo)} type="button" aria-label={`Copiar voucher ${voucher.codigo || ""}`}>
@@ -282,6 +415,38 @@ export default function HomePage() {
             <p>Renove agora para manter o acesso à internet da base.</p>
             <button className="home-renew-button" onClick={() => (window.location.href = "/renovacao")} type="button">
               Renovação
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activatedVoucher && (
+        <div className="home-menu-backdrop" role="presentation" onClick={() => setActivatedVoucher(null)}>
+          <div className="voucher-activated-dialog" role="alertdialog" aria-modal="true" aria-labelledby="activated-title" onClick={e => e.stopPropagation()}>
+            <div className="activated-check" aria-hidden="true">✓</div>
+            <h2 id="activated-title" className="activated-title">Acesso ativado!</h2>
+            <p className="activated-subtitle">Seu voucher está pronto. Use o código abaixo para se conectar.</p>
+
+            <div className="activated-code-row">
+              <span className="activated-code">{activatedVoucher.codigo}</span>
+              <button
+                className="activated-copy-btn"
+                type="button"
+                onClick={() => { void navigator.clipboard.writeText(activatedVoucher.codigo ?? ""); setCopiedCode(activatedVoucher.codigo ?? ""); }}
+                aria-label="Copiar código"
+              >
+                Copiar
+              </button>
+            </div>
+
+            <ol className="activated-steps">
+              <li><strong>Conecte ao Wi-Fi</strong> da Base</li>
+              <li>Abra o navegador — a tela de acesso abrirá automaticamente</li>
+              <li>Cole o código acima e confirme</li>
+            </ol>
+
+            <button className="home-renew-button" type="button" onClick={() => setActivatedVoucher(null)}>
+              Entendido
             </button>
           </div>
         </div>
