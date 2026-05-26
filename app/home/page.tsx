@@ -166,7 +166,7 @@ export default function HomePage() {
         .order("data_expiracao", { ascending: false });
       if (!data || !alive) return;
       const activated = (data as Voucher[]).find(
-        v => v.status === "criado" && v.id && seenPendingIds.current.has(v.id)
+        v => (v.status === "criado" || v.status === "Quase venc.") && v.id && seenPendingIds.current.has(v.id)
       );
       if (activated) {
         seenPendingIds.current.delete(activated.id!);
@@ -273,7 +273,7 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {captiveMac && voucherStatus === "Em dia" && !captiveConnecting && (
+              {captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && !captiveConnecting && (
                 <div className="captive-banner" role="status">
                   <div className="captive-banner-text">
                     <strong>Conectar à rede premium</strong>

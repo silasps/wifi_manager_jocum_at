@@ -100,7 +100,7 @@ export default function HotspotPage() {
 
     const now = Date.now();
     const active = (vouchers as Voucher[]).find(
-      (v) => v.status === "criado" && v.data_expiracao && new Date(v.data_expiracao).getTime() > now,
+      (v) => (v.status === "criado" || v.status === "Quase venc.") && v.data_expiracao && new Date(v.data_expiracao).getTime() > now,
     );
     const pending = (vouchers as Voucher[]).find((v) => v.status === "pendente");
 
@@ -178,7 +178,7 @@ export default function HotspotPage() {
         .from("vouchers")
         .select("id, status, data_expiracao")
         .eq("cliente_id", user.id)
-        .eq("status", "criado")
+        .in("status", ["criado", "Quase venc."])
         .gt("data_expiracao", now)
         .limit(1);
       if (data && data.length > 0 && alive) {

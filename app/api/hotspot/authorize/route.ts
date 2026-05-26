@@ -27,13 +27,13 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
 
-  // Busca voucher ativo (criado + não expirado)
+  // Busca voucher ativo (criado ou quase vencendo + não expirado)
   const now = new Date().toISOString();
   const { data: vouchers, error: voucherError } = await admin
     .from("vouchers")
     .select("id, data_expiracao")
     .eq("cliente_id", user.id)
-    .eq("status", "criado")
+    .in("status", ["criado", "Quase venc."])
     .gt("data_expiracao", now)
     .order("data_expiracao", { ascending: false })
     .limit(1);
