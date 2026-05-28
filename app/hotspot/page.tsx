@@ -47,6 +47,14 @@ export default function HotspotPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
+  // Recuperar senha
+  const [recoverModal, setRecoverModal] = useState(false);
+  const [recoverEmail, setRecoverEmail] = useState("");
+  const [recoverLoading, setRecoverLoading] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+  const [recoveredPassword, setRecoveredPassword] = useState<string | null>(null);
+  const [passwordCopied, setPasswordCopied] = useState(false);
+
   // Lê params da URL, salva cookies e verifica sessão
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -71,51 +79,35 @@ export default function HotspotPage() {
   }, []);
 
   async function checkAuth(currentMac: string) {
-    const { data: { user } } = await supabase.auth.getUser();
+    // getSession lê do localStorage sem fazer chamada de rede — funciona no portal cativo
+    const { data: { session } } = await supabase.auth.getSession();
 
-    if (!user) {
+    if (!session) {
       setState("guest");
       return;
     }
 
-    // Busca nome do usuário
-    const { data: cliente } = await supabase
-      .from("clientes")
-      .select("nome")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    setUserName(cliente?.nome?.trim().split(/\s+/)[0] ?? "");
+    try {
+      // Proxy server-side: o Vercel tem internet, o dispositivo no portal cativo não tem
+      const res = await fetch("/api/hotspot/session", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) { setState("guest"); return; }
 
-    // Busca vouchers
-    const { data: vouchers } = await supabase
-      .from("vouchers")
-      .select("id, status, data_expiracao")
-      .eq("cliente_id", user.id)
-      .order("data_expiracao", { ascending: false });
+      const data = await res.json() as { state: string; userName?: string };
+      setUserName(data.userName ?? "");
 
-    if (!vouchers || vouchers.length === 0) {
+      if (data.state === "guest") { setState("guest"); return; }
+      if (data.state === "has-voucher") {
+        setState("auto-connect");
+        void startAuthorize(currentMac);
+        return;
+      }
+      if (data.state === "pending-voucher") { setState("pending-voucher"); return; }
       setState("no-voucher");
-      return;
+    } catch {
+      setState("guest");
     }
-
-    const now = Date.now();
-    const active = (vouchers as Voucher[]).find(
-      (v) => (v.status === "criado" || v.status === "Quase venc.") && v.data_expiracao && new Date(v.data_expiracao).getTime() > now,
-    );
-    const pending = (vouchers as Voucher[]).find((v) => v.status === "pendente");
-
-    if (active) {
-      setState("auto-connect");
-      void startAuthorize(currentMac);
-      return;
-    }
-
-    if (pending) {
-      setState("pending-voucher");
-      return;
-    }
-
-    setState("no-voucher");
   }
 
   async function startAuthorize(currentMac: string) {
@@ -149,21 +141,29 @@ export default function HotspotPage() {
   useEffect(() => {
     if (!authId) return;
     let alive = true;
+    // Timeout de 2 minutos: se o agente Python na UDM estiver travado, mostra erro
+    const timeout = setTimeout(() => {
+      if (alive) { alive = false; setState("auth-error"); }
+    }, 120_000);
     const interval = setInterval(async () => {
       if (!alive) return;
-      const res = await fetch(`/api/hotspot/authorize/${authId}`);
-      if (!res.ok) return;
-      const data = await res.json() as { status?: string };
-      if (!alive) return;
-      if (data.status === "autorizado") {
-        clearInterval(interval);
-        setState("success");
-      } else if (data.status === "erro") {
-        clearInterval(interval);
-        setState("auth-error");
-      }
+      try {
+        const res = await fetch(`/api/hotspot/authorize/${authId}`);
+        if (!res.ok || !alive) return;
+        const data = await res.json() as { status?: string };
+        if (!alive) return;
+        if (data.status === "autorizado") {
+          clearInterval(interval);
+          clearTimeout(timeout);
+          setState("success");
+        } else if (data.status === "erro") {
+          clearInterval(interval);
+          clearTimeout(timeout);
+          setState("auth-error");
+        }
+      } catch { /* ignora erro de rede transitório */ }
     }, 3000);
-    return () => { alive = false; clearInterval(interval); };
+    return () => { alive = false; clearInterval(interval); clearTimeout(timeout); };
   }, [authId]);
 
   // Polling quando voucher está pendente (Tela B)
@@ -171,20 +171,20 @@ export default function HotspotPage() {
     if (state !== "pending-voucher") return;
     let alive = true;
     const poll = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !alive) return;
-      const now = new Date().toISOString();
-      const { data } = await supabase
-        .from("vouchers")
-        .select("id, status, data_expiracao")
-        .eq("cliente_id", user.id)
-        .in("status", ["criado", "Quase venc."])
-        .gt("data_expiracao", now)
-        .limit(1);
-      if (data && data.length > 0 && alive) {
-        setState("auto-connect");
-        void startAuthorize(mac);
-      }
+      if (!alive) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || !alive) return;
+      try {
+        const res = await fetch("/api/hotspot/session", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok || !alive) return;
+        const data = await res.json() as { state: string };
+        if (data.state === "has-voucher" && alive) {
+          setState("auto-connect");
+          void startAuthorize(mac);
+        }
+      } catch { /* ignora erro de rede no polling */ }
     };
     const interval = setInterval(() => void poll(), 5000);
     return () => { alive = false; clearInterval(interval); };
@@ -204,16 +204,61 @@ export default function HotspotPage() {
     return () => clearTimeout(t);
   }, [state, countdown, redirectUrl]);
 
+  const openRecoverModal = () => {
+    setRecoverEmail(loginEmail.trim());
+    setRecoveredPassword(null);
+    setRecoverError(null);
+    setPasswordCopied(false);
+    setRecoverModal(true);
+    if (loginEmail.trim()) void fetchPassword(loginEmail.trim());
+  };
+
+  const fetchPassword = async (email: string) => {
+    setRecoverLoading(true);
+    setRecoverError(null);
+    const response = await fetch(`/api/recover-password?email=${encodeURIComponent(email.trim())}`);
+    const result = await response.json() as { senha?: string; error?: string };
+    setRecoverLoading(false);
+    if (!response.ok || !result.senha) {
+      setRecoverError(result.error ?? "Não foi possível encontrar o cadastro.");
+      return;
+    }
+    setRecoveredPassword(result.senha);
+  };
+
+  const closeRecoverModal = () => {
+    setRecoverModal(false);
+    setRecoveredPassword(null);
+    setRecoverError(null);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginLoading(true);
     setLoginError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPassword });
-    setLoginLoading(false);
-    if (error) { setLoginError("Email ou senha incorretos."); return; }
-    // Redireciona de volta para o hotspot com os params preservados
-    const params = new URLSearchParams(window.location.search);
-    window.location.href = `/hotspot?${params.toString()}`;
+    try {
+      // Login via proxy server-side para funcionar no portal cativo (dispositivo sem internet)
+      const res = await fetch("/api/hotspot/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword }),
+      });
+      const data = await res.json() as { access_token?: string; refresh_token?: string; code?: string; error?: string };
+
+      if (!res.ok) {
+        setLoginError(data.code === "invalid_credentials" ? "Email ou senha incorretos." : "Erro ao conectar. Tente novamente.");
+        setLoginLoading(false);
+        return;
+      }
+
+      await supabase.auth.setSession({ access_token: data.access_token!, refresh_token: data.refresh_token! });
+      setLoginLoading(false);
+      const params = new URLSearchParams(window.location.search);
+      window.location.href = `/hotspot?${params.toString()}`;
+    } catch {
+      setLoginError("Erro de rede. Verifique sua conexão.");
+      setLoginLoading(false);
+    }
   };
 
   // ── Tela de loading ──
@@ -395,6 +440,9 @@ export default function HotspotPage() {
           <button type="submit" className="hotspot-cta-secondary hsp-login-btn" disabled={loginLoading}>
             {loginLoading ? "Entrando…" : "Entrar"}
           </button>
+          <button type="button" className="link-button" onClick={openRecoverModal} disabled={loginLoading}>
+            Esqueceu sua senha?
+          </button>
         </form>
       </section>
 
@@ -402,6 +450,55 @@ export default function HotspotPage() {
         <span>JOCUM Almirante Tamandaré · Base de Missões</span>
         <a href="/termos-de-uso" className="hotspot-footer-link">Termos de Uso</a>
       </footer>
+
+      {recoverModal && (
+        <div className="modal-overlay" onClick={closeRecoverModal}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Recuperar senha">
+            <p className="modal-title">Recuperar senha</p>
+
+            {!recoveredPassword ? (
+              <form onSubmit={(e) => { e.preventDefault(); void fetchPassword(recoverEmail); }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginBottom: "0.75rem" }}>
+                  <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)" }}>Email do cadastro</span>
+                  <input
+                    type="email"
+                    value={recoverEmail}
+                    onChange={(e) => setRecoverEmail(e.target.value)}
+                    autoComplete="email"
+                    required
+                    autoFocus={!recoverEmail}
+                  />
+                </label>
+                {recoverError && <p className="modal-copied-hint" style={{ color: "#fca5a5" }}>{recoverError}</p>}
+                <button className="primary-button" type="submit" disabled={recoverLoading}>
+                  {recoverLoading ? "Buscando..." : "Buscar senha"}
+                </button>
+              </form>
+            ) : (
+              <>
+                <div className="modal-password-row">
+                  <span className="modal-password-value">{recoveredPassword}</span>
+                  <button
+                    type="button"
+                    className="modal-copy-button"
+                    aria-label="Copiar senha"
+                    onClick={() => { void navigator.clipboard.writeText(recoveredPassword); setPasswordCopied(true); }}
+                  >
+                    {passwordCopied ? (
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                    )}
+                  </button>
+                </div>
+                {passwordCopied && <p className="modal-copied-hint">Senha copiada!</p>}
+              </>
+            )}
+
+            <button type="button" className="link-button" onClick={closeRecoverModal}>Fechar</button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
