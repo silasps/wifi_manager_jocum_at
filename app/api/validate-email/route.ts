@@ -19,15 +19,13 @@ export async function GET(request: Request) {
   try {
     const records = await resolveMx(domain);
     const valid = records.length > 0;
-
     return NextResponse.json({
       valid,
       reason: valid ? null : "Este domínio não parece receber emails. Confira o endereço.",
     });
   } catch {
-    return NextResponse.json(
-      { valid: false, reason: "Este domínio não parece receber emails. Confira o endereço." },
-      { status: 400 },
-    );
+    // Se a consulta DNS falhar (timeout, domínio sem MX, etc.) tratamos como válido
+    // para não bloquear usuários com domínios legítimos mas sem registro MX acessível
+    return NextResponse.json({ valid: true, reason: null });
   }
 }

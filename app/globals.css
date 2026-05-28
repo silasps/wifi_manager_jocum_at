@@ -3886,6 +3886,25 @@ input:disabled {
 .hsp-login-btn:hover { background: rgba(255,121,42,0.12); }
 .hsp-login-btn:disabled { opacity: 0.5; cursor: default; }
 
+/* ── Botão "Já tenho cadastro" no hero ── */
+.hsp-already-member-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+  background: rgba(255, 121, 42, 0.12);
+  border: 1px solid rgba(255, 121, 42, 0.35);
+  border-radius: 999px;
+  color: #ff792a;
+  font-size: 0.82rem;
+  font-weight: 750;
+  padding: 7px 16px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s;
+}
+.hsp-already-member-btn:hover { background: rgba(255, 121, 42, 0.2); }
+
 /* ── Escolha de plano (visitante) ── */
 .hsp-plan-choice {
   display: grid;

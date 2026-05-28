@@ -3,6 +3,25 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../utils/supabase/client";
 
+// Armazena a sessão diretamente no localStorage para evitar chamada de rede ao supabase.co
+// (o portal cativo bloqueia conexões diretas ao Supabase no browser)
+function storeSupabaseSession(accessToken: string, refreshToken: string) {
+  try {
+    const [, payloadB64] = accessToken.split(".");
+    const payload = JSON.parse(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
+    const projectRef = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname.split(".")[0];
+    const session = {
+      access_token: accessToken,
+      token_type: "bearer",
+      expires_in: 3600,
+      expires_at: (payload.exp as number) ?? Math.floor(Date.now() / 1000) + 3600,
+      refresh_token: refreshToken,
+      user: payload,
+    };
+    localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify(session));
+  } catch { /* ignora */ }
+}
+
 type PortalState =
   | "loading"
   | "auto-connect"    // logado + voucher ativo → autoriza automaticamente
@@ -238,7 +257,7 @@ export default function HotspotPage() {
         return;
       }
 
-      await supabase.auth.setSession({ access_token: data.access_token!, refresh_token: data.refresh_token! });
+      storeSupabaseSession(data.access_token!, data.refresh_token!);
       setLoginLoading(false);
       const params = new URLSearchParams(window.location.search);
       window.location.href = `/hotspot?${params.toString()}`;
@@ -278,23 +297,13 @@ export default function HotspotPage() {
         return;
       }
 
-      // Se criou conta e tem tokens → login automático
+      // Se criou conta e tem tokens → armazena sessão sem chamar supabase.co (bloqueado no portal cativo)
       if (data.access_token && data.refresh_token) {
-        await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+        storeSupabaseSession(data.access_token, data.refresh_token);
       }
 
       setRegLoading(false);
-
-      if (selectedPlan === "paid") {
-        // Salva dados básicos e vai para o fluxo de pagamento
-        sessionStorage.setItem("wf_hotspot_signup", JSON.stringify({
-          nome: regNome.trim(),
-          email: regEmail.trim(),
-          loggedIn: !!(data.access_token),
-        }));
-        window.location.href = "/?tab=signup";
-        return;
-      }
+      // Plano free: mostra guia de salvar a página
 
       // Plano gratuito: mostra guia de salvar a página
       setGuestView("save-guide");
@@ -544,6 +553,13 @@ export default function HotspotPage() {
         <img src="/brand/logo-jocum-almirante.png" alt="JOCUM Almirante Tamandaré" className="hotspot-logo" />
         <h1 className="hotspot-title">Internet da Base</h1>
         <p className="hotspot-subtitle">Escolha como quer usar a internet da Base JOCUM AT.</p>
+        <button
+          type="button"
+          className="hsp-already-member-btn"
+          onClick={() => document.getElementById("hsp-login-anchor")?.scrollIntoView({ behavior: "smooth" })}
+        >
+          Já tenho cadastro →
+        </button>
       </header>
 
       <section className="hsp-plan-choice" aria-label="Escolha de plano">
@@ -582,14 +598,14 @@ export default function HotspotPage() {
             type="button"
             className="hotspot-cta-primary"
             style={{ fontSize: "0.9rem", minHeight: 44 }}
-            onClick={() => { setSelectedPlan("paid"); setGuestView("signup-paid"); }}
+            onClick={() => { window.location.href = "/?tab=signup&from=portal"; }}
           >
             Ver planos pagos
           </button>
         </article>
       </section>
 
-      <section className="hsp-login-section" aria-label="Já tenho cadastro">
+      <section id="hsp-login-anchor" className="hsp-login-section" aria-label="Já tenho cadastro">
         <p className="hsp-login-label">Já tenho cadastro</p>
         <form className="hsp-login-form" onSubmit={handleLogin}>
           <input

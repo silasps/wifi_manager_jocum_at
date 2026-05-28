@@ -251,10 +251,12 @@ function PlanSummary({
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("login");
+  const [fromPortal, setFromPortal] = useState(false);
 
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "signup") setTab("signup");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "signup") setTab("signup");
+    if (params.get("from") === "portal") setFromPortal(true);
   }, []);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -368,6 +370,9 @@ export default function Home() {
       return false;
     }
 
+    // Quando vem do portal cativo o acesso a APIs externas pode ser restrito — pula a validação de DNS
+    if (fromPortal) return true;
+
     setEmailChecking(true);
     let result: { valid?: boolean; reason?: string } = {};
     let ok = false;
@@ -376,7 +381,8 @@ export default function Home() {
       result = (await response.json()) as { valid?: boolean; reason?: string };
       ok = response.ok;
     } catch {
-      result.reason = "Não foi possível validar o email agora.";
+      // Falha de rede no portal cativo — trata como válido para não bloquear o cadastro
+      return true;
     } finally {
       setEmailChecking(false);
     }

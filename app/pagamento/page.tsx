@@ -61,7 +61,9 @@ const [showCardForm, setShowCardForm] = useState(false);
   useEffect(() => {
     if (countdown === null) return;
     if (countdown === 0) {
-      window.location.href = "/home";
+      // Se veio do portal cativo, volta para /hotspot para conectar com o voucher criado
+      const captiveMac = document.cookie.split(";").find((c) => c.trim().startsWith("captive_mac="));
+      window.location.href = captiveMac ? "/hotspot" : "/home";
       return;
     }
     const t = setTimeout(() => setCountdown((c) => (c !== null ? c - 1 : null)), 1000);
