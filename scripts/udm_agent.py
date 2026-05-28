@@ -22,6 +22,8 @@ COL_STATUS = "status"
 COL_CODIGO = "codigo"
 LOG_FILE = "/data/scripts/voucher.log"
 QUOTA_KB = 30 * 1024
+VELOCIDADE_PAGO_KBPS = 50000   # 50 Mbps — planos pagos
+VELOCIDADE_FREE_KBPS = 500     # 0,5 Mbps — plano gratuito
 
 # ===============================
 # CONFIGURAÇÕES UNIFI - API KEY
@@ -145,7 +147,9 @@ def buscar_cliente_nome_formatado(cliente_uid):
 # VOUCHER - MONGO INTERNO UDM
 # ===============================
 import uuid
-def gerar_codigo_formatado(tempo, quota, note):
+def gerar_codigo_formatado(tempo, quota, note, velocidade_kbps=None):
+    if velocidade_kbps is None or velocidade_kbps <= 0:
+        velocidade_kbps = DEFAULT_VELOCIDADE_KBPS
     external_id = str(uuid.uuid4())
     site_id = "6834b054b243651f00c8dcc5"  # substitua pelo seu site_id real da UDM
     admin_name = "Contato"  # ou o nome desejado
@@ -166,8 +170,8 @@ def gerar_codigo_formatado(tempo, quota, note):
         f'admin_name: \'{admin_name}\', '
         f'external_id: UUID(\'{external_id}\'), '
         f'site_id: \'{site_id}\', '
-        f'qos_rate_max_up: 30000, '
-        f'qos_rate_max_down: 30000, '
+        f'qos_rate_max_up: {velocidade_kbps}, '
+        f'qos_rate_max_down: {velocidade_kbps}, '
         f'qos_overwrite: true'
         f'}}); print(code);"'
     )
@@ -183,23 +187,30 @@ def processar_vouchers():
         else:
             for reg in registros:
                 tempo_desc = reg.get("tempo_desc", "")
-                tempo_minutos = converter_tempo_para_minutos(tempo_desc)
-                tempo = tempo_minutos if tempo_minutos > 0 else 60 #Define como 60 minutos caso a conversão falhe
+                is_free = tempo_desc.lower() == "ilimitado"
+                if is_free:
+                    tempo = 0  # duration=0 no UniFi = sem expiração
+                else:
+                    tempo_minutos = converter_tempo_para_minutos(tempo_desc)
+                    tempo = tempo_minutos if tempo_minutos > 0 else 60
                 cliente_uid = reg.get("cliente_id", "")
                 nome_formatado = buscar_cliente_nome_formatado(cliente_uid)
-                log(f"Criando voucher por {tempo} minutos para {nome_formatado}...")
-                quota = reg.get(COL_QTD, QUOTA_KB)  # Usando o valor de quota do Supabase
-                log(f"Criando voucher por {tempo} minutos para {nome_formatado}...")
-                cmd = gerar_codigo_formatado(tempo, quota, nome_formatado)
+                quota = reg.get(COL_QTD, QUOTA_KB)
+                velocidade_kbps = VELOCIDADE_FREE_KBPS if is_free else VELOCIDADE_PAGO_KBPS
+                log(f"Criando voucher para {nome_formatado} | {'ilimitado' if is_free else f'{tempo} min'} | {velocidade_kbps} Kbps...")
+                cmd = gerar_codigo_formatado(tempo, quota, nome_formatado, velocidade_kbps)
                 result = subprocess.check_output(cmd, shell=True).decode().strip()
                 codigo = result if result else None
                 if not codigo:
                     log("❌ Não foi possível capturar o código do voucher.")
                     continue
-                exp_time = datetime.datetime.now() + datetime.timedelta(minutes=tempo)
-                data_expiracao = exp_time.strftime("%Y-%m-%d %H:%M:%S")
-                atualizar_voucher_supabase(reg["id"], codigo, data_expiracao,quota)
-                log(f"✅ Voucher criado: {codigo} | Expira em: {data_expiracao}")
+                if is_free:
+                    data_expiracao = None  # sem expiração
+                else:
+                    exp_time = datetime.datetime.now() + datetime.timedelta(minutes=tempo)
+                    data_expiracao = exp_time.strftime("%Y-%m-%d %H:%M:%S")
+                atualizar_voucher_supabase(reg["id"], codigo, data_expiracao, quota)
+                log(f"✅ Voucher criado: {codigo} | {'Sem expiração' if is_free else f'Expira em: {data_expiracao}'}")
     except Exception as e:
         log(f"❌ Erro: {e}")
 

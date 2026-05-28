@@ -5,24 +5,16 @@ import { supabase } from "../../utils/supabase/client";
 
 type PortalState =
   | "loading"
-  | "auto-connect"    // Tela A: logado + voucher ativo → autoriza automaticamente
+  | "auto-connect"    // logado + voucher ativo → autoriza automaticamente
   | "connecting"      // aguardando Python processar a autorização
-  | "success"         // autorizado, exibindo tela de sucesso
-  | "auth-error"      // Python falhou ao autorizar o MAC
-  | "pending-voucher" // Tela B: logado + voucher pendente
-  | "no-voucher"      // Tela C: logado + sem voucher válido
-  | "guest";          // Tela D: não logado
+  | "success"         // autorizado
+  | "auth-error"      // Python falhou ao autorizar
+  | "pending-voucher" // logado + voucher pendente
+  | "no-voucher"      // logado + sem voucher válido
+  | "guest";          // não logado
 
-type Voucher = { id?: string; status?: string; data_expiracao?: string | null };
-
-const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-
-const plans = [
-  { category: "Obreiro", monthly: 30, daily: 3, description: "Individual" },
-  { category: "Aluno", monthly: 35, daily: 3, description: "Escola" },
-  { category: "Casal", monthly: 50, daily: 5, description: "2 pessoas", highlight: true },
-  { category: "Ministério", monthly: 50, daily: null, description: "Equipes", note: "+ R$ 15/pessoa acima de 3" },
-];
+// Sub-estados da tela de visitante
+type GuestView = "plans" | "signup-free" | "signup-paid" | "save-guide";
 
 function setCookie(name: string, value: string, maxAge = 3600) {
   document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
@@ -33,15 +25,38 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match.split("=")[1].trim()) : null;
 }
 
+function onlyDigits(v: string) { return v.replace(/\D/g, ""); }
+
+function formatPhone(v: string) {
+  const d = onlyDigits(v).slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
+}
+
 export default function HotspotPage() {
   const [state, setState] = useState<PortalState>("loading");
   const [mac, setMac] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("http://connectivitycheck.gstatic.com/generate_204");
   const [userName, setUserName] = useState("");
+  const [planoTipo, setPlanoTipo] = useState<"free" | "pago" | null>(null);
   const [authId, setAuthId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
 
-  // Login form state (Tela D)
+  // Sub-estado da tela de visitante
+  const [guestView, setGuestView] = useState<GuestView>("plans");
+  const [selectedPlan, setSelectedPlan] = useState<"free" | "paid">("free");
+
+  // Formulário de cadastro inline
+  const [regNome, setRegNome] = useState("");
+  const [regWhats, setRegWhats] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regLoading, setRegLoading] = useState(false);
+
+  // Formulário de login (usuários existentes)
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -55,7 +70,6 @@ export default function HotspotPage() {
   const [recoveredPassword, setRecoveredPassword] = useState<string | null>(null);
   const [passwordCopied, setPasswordCopied] = useState(false);
 
-  // Lê params da URL, salva cookies e verifica sessão
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const macParam = params.get("id") ?? "";
@@ -66,7 +80,6 @@ export default function HotspotPage() {
       setCookie("captive_mac", macParam);
       setCookie("captive_url", urlParam);
     } else {
-      // Tenta recuperar do cookie (caso recarregue sem params)
       const savedMac = getCookie("captive_mac");
       const savedUrl = getCookie("captive_url");
       if (savedMac) setMac(savedMac);
@@ -74,28 +87,23 @@ export default function HotspotPage() {
     }
 
     setRedirectUrl(urlParam || getCookie("captive_url") || "http://connectivitycheck.gstatic.com/generate_204");
-
     void checkAuth(macParam || getCookie("captive_mac") || "");
   }, []);
 
   async function checkAuth(currentMac: string) {
-    // getSession lê do localStorage sem fazer chamada de rede — funciona no portal cativo
     const { data: { session } } = await supabase.auth.getSession();
 
-    if (!session) {
-      setState("guest");
-      return;
-    }
+    if (!session) { setState("guest"); return; }
 
     try {
-      // Proxy server-side: o Vercel tem internet, o dispositivo no portal cativo não tem
       const res = await fetch("/api/hotspot/session", {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (!res.ok) { setState("guest"); return; }
 
-      const data = await res.json() as { state: string; userName?: string };
+      const data = await res.json() as { state: string; userName?: string; planoTipo?: "free" | "pago" };
       setUserName(data.userName ?? "");
+      setPlanoTipo(data.planoTipo ?? null);
 
       if (data.state === "guest") { setState("guest"); return; }
       if (data.state === "has-voucher") {
@@ -125,26 +133,18 @@ export default function HotspotPage() {
       });
       const data = await res.json() as { status?: string; id?: string; error?: string };
 
-      if (data.status === "autorizado") {
-        setState("success");
-        return;
-      }
-      if (data.id) {
-        setAuthId(data.id);
-      }
+      if (data.status === "autorizado") { setState("success"); return; }
+      if (data.id) setAuthId(data.id);
     } catch {
       setState("auto-connect");
     }
   }
 
-  // Polling quando temos um authId pendente
+  // Polling do authId
   useEffect(() => {
     if (!authId) return;
     let alive = true;
-    // Timeout de 2 minutos: se o agente Python na UDM estiver travado, mostra erro
-    const timeout = setTimeout(() => {
-      if (alive) { alive = false; setState("auth-error"); }
-    }, 120_000);
+    const timeout = setTimeout(() => { if (alive) { alive = false; setState("auth-error"); } }, 120_000);
     const interval = setInterval(async () => {
       if (!alive) return;
       try {
@@ -152,21 +152,14 @@ export default function HotspotPage() {
         if (!res.ok || !alive) return;
         const data = await res.json() as { status?: string };
         if (!alive) return;
-        if (data.status === "autorizado") {
-          clearInterval(interval);
-          clearTimeout(timeout);
-          setState("success");
-        } else if (data.status === "erro") {
-          clearInterval(interval);
-          clearTimeout(timeout);
-          setState("auth-error");
-        }
-      } catch { /* ignora erro de rede transitório */ }
+        if (data.status === "autorizado") { clearInterval(interval); clearTimeout(timeout); setState("success"); }
+        else if (data.status === "erro") { clearInterval(interval); clearTimeout(timeout); setState("auth-error"); }
+      } catch { /* ignora transitório */ }
     }, 3000);
     return () => { alive = false; clearInterval(interval); clearTimeout(timeout); };
   }, [authId]);
 
-  // Polling quando voucher está pendente (Tela B)
+  // Polling voucher pendente
   useEffect(() => {
     if (state !== "pending-voucher") return;
     let alive = true;
@@ -179,18 +172,19 @@ export default function HotspotPage() {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         if (!res.ok || !alive) return;
-        const data = await res.json() as { state: string };
+        const data = await res.json() as { state: string; planoTipo?: "free" | "pago" };
         if (data.state === "has-voucher" && alive) {
+          if (data.planoTipo) setPlanoTipo(data.planoTipo);
           setState("auto-connect");
           void startAuthorize(mac);
         }
-      } catch { /* ignora erro de rede no polling */ }
+      } catch { /* ignora */ }
     };
     const interval = setInterval(() => void poll(), 5000);
     return () => { alive = false; clearInterval(interval); };
   }, [state, mac]);
 
-  // Countdown na tela de sucesso → redireciona
+  // Countdown e redirect no sucesso
   useEffect(() => {
     if (state !== "success") return;
     if (countdown <= 0) {
@@ -226,18 +220,11 @@ export default function HotspotPage() {
     setRecoveredPassword(result.senha);
   };
 
-  const closeRecoverModal = () => {
-    setRecoverModal(false);
-    setRecoveredPassword(null);
-    setRecoverError(null);
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginLoading(true);
     setLoginError(null);
     try {
-      // Login via proxy server-side para funcionar no portal cativo (dispositivo sem internet)
       const res = await fetch("/api/hotspot/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -261,7 +248,70 @@ export default function HotspotPage() {
     }
   };
 
-  // ── Tela de loading ──
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError(null);
+
+    if (!regNome.trim()) { setRegError("Informe seu nome."); return; }
+    if (!regEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(regEmail)) { setRegError("Email inválido."); return; }
+    if (!regPassword) { setRegError("Defina uma senha."); return; }
+    if (regPassword !== regConfirm) { setRegError("As senhas não conferem."); return; }
+
+    setRegLoading(true);
+    try {
+      const res = await fetch("/api/hotspot/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: regNome.trim(),
+          email: regEmail.trim(),
+          password: regPassword,
+          whatsApp: onlyDigits(regWhats) ? `+55${onlyDigits(regWhats)}` : "",
+          plano: selectedPlan === "free" ? "free" : "pago",
+        }),
+      });
+      const data = await res.json() as { access_token?: string; refresh_token?: string; plano?: string; error?: string; code?: string };
+
+      if (!res.ok && res.status !== 207) {
+        setRegError(data.error ?? "Erro ao criar conta. Tente novamente.");
+        setRegLoading(false);
+        return;
+      }
+
+      // Se criou conta e tem tokens → login automático
+      if (data.access_token && data.refresh_token) {
+        await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+      }
+
+      setRegLoading(false);
+
+      if (selectedPlan === "paid") {
+        // Salva dados básicos e vai para o fluxo de pagamento
+        sessionStorage.setItem("wf_hotspot_signup", JSON.stringify({
+          nome: regNome.trim(),
+          email: regEmail.trim(),
+          loggedIn: !!(data.access_token),
+        }));
+        window.location.href = "/?tab=signup";
+        return;
+      }
+
+      // Plano gratuito: mostra guia de salvar a página
+      setGuestView("save-guide");
+    } catch {
+      setRegError("Erro de rede. Tente novamente.");
+      setRegLoading(false);
+    }
+  };
+
+  const handleContinueAfterSave = async () => {
+    // Garante que a sessão está ativa antes de tentar autorizar
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setState("guest"); return; }
+    void checkAuth(mac);
+  };
+
+  // ── Loading ──
   if (state === "loading") {
     return (
       <main className="hotspot-page">
@@ -272,7 +322,7 @@ export default function HotspotPage() {
     );
   }
 
-  // ── Tela A / connecting ──
+  // ── Reconectando / Conectando ──
   if (state === "auto-connect" || state === "connecting") {
     return (
       <main className="hotspot-page">
@@ -286,7 +336,7 @@ export default function HotspotPage() {
     );
   }
 
-  // ── Tela de erro de autorização ──
+  // ── Erro de autorização ──
   if (state === "auth-error") {
     return (
       <main className="hotspot-page">
@@ -295,12 +345,7 @@ export default function HotspotPage() {
           <div className="hsp-check-circle" style={{ borderColor: "#f87171", background: "rgba(248,113,113,0.1)", color: "#f87171" }} aria-hidden="true">✕</div>
           <p className="hsp-center-title">Não foi possível conectar</p>
           <p className="hsp-center-sub">Ocorreu um erro ao autorizar seu dispositivo. Tente novamente.</p>
-          <button
-            type="button"
-            className="hotspot-cta-primary"
-            style={{ marginTop: 8 }}
-            onClick={() => { setAuthId(null); void startAuthorize(mac); }}
-          >
+          <button type="button" className="hotspot-cta-primary" style={{ marginTop: 8 }} onClick={() => { setAuthId(null); void startAuthorize(mac); }}>
             Tentar novamente
           </button>
         </div>
@@ -308,7 +353,7 @@ export default function HotspotPage() {
     );
   }
 
-  // ── Tela de sucesso ──
+  // ── Sucesso ──
   if (state === "success") {
     return (
       <main className="hotspot-page">
@@ -317,13 +362,20 @@ export default function HotspotPage() {
           <div className="hsp-check-circle" aria-hidden="true">✓</div>
           <h1 className="hsp-success-title">Você está conectado!</h1>
           <p className="hsp-success-text">Aproveite a estrutura de internet da Base JOCUM AT.</p>
+          {planoTipo === "free" && (
+            <div className="hsp-upgrade-banner" role="complementary" aria-label="Sugestão de upgrade">
+              <p className="hsp-upgrade-title">Conectado a 0,5 Mbps</p>
+              <p className="hsp-upgrade-desc">Quer streaming, videochamadas e mais velocidade?</p>
+              <a href="/renovacao" className="hsp-upgrade-link">Ver planos premium →</a>
+            </div>
+          )}
           <p className="hsp-success-countdown">Redirecionando em {countdown}s…</p>
         </div>
       </main>
     );
   }
 
-  // ── Tela B — voucher pendente ──
+  // ── Voucher pendente ──
   if (state === "pending-voucher") {
     return (
       <main className="hotspot-page">
@@ -337,22 +389,20 @@ export default function HotspotPage() {
     );
   }
 
-  // ── Tela C — sem voucher ──
+  // ── Sem voucher ──
   if (state === "no-voucher") {
     return (
       <main className="hotspot-page">
         <div className="hsp-center-card">
           <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" />
-          <p className="hsp-center-title">
-            {userName ? `Olá, ${userName}.` : "Acesso encerrado."}
-          </p>
-          <p className="hsp-center-sub">Seu plano expirou ou não há voucher ativo.</p>
-          <a href="/renovacao" className="hotspot-cta-primary" style={{ marginTop: 8 }}>Renovar plano</a>
+          <p className="hsp-center-title">{userName ? `Olá, ${userName}.` : "Acesso encerrado."}</p>
+          <p className="hsp-center-sub">Seu acesso expirou.</p>
+          <a href="/renovacao" className="hotspot-cta-primary" style={{ marginTop: 8 }}>Renovar ou fazer upgrade</a>
           <button
             type="button"
             className="hotspot-cta-secondary"
             style={{ marginTop: 8 }}
-            onClick={async () => { await supabase.auth.signOut(); setState("guest"); }}
+            onClick={async () => { await supabase.auth.signOut(); setState("guest"); setGuestView("plans"); }}
           >
             Sair
           </button>
@@ -361,59 +411,183 @@ export default function HotspotPage() {
     );
   }
 
-  // ── Tela D — visitante / não logado ──
+  // ── Visitante ──
+
+  // Sub-tela: Guia de salvar a página (após cadastro gratuito)
+  if (state === "guest" && guestView === "save-guide") {
+    return (
+      <main className="hotspot-page">
+        <div className="hsp-center-card">
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" />
+          <div className="hsp-check-circle" style={{ borderColor: "#4ade80", background: "rgba(74,222,128,0.1)", color: "#4ade80" }} aria-hidden="true">✓</div>
+          <p className="hsp-center-title">Conta criada!</p>
+          <p className="hsp-center-sub">Seu acesso gratuito está sendo ativado.</p>
+
+          <div className="hsp-save-guide" role="complementary" aria-label="Como salvar esta página">
+            <p className="hsp-save-title">Salve esta página para acessos futuros</p>
+            <p className="hsp-save-desc">Na próxima vez que se conectar ao Wi-Fi, você precisará fazer login. Salvar fica mais fácil:</p>
+            <div className="hsp-save-steps">
+              <div className="hsp-save-step">
+                <span className="hsp-save-step-icon" aria-hidden="true">📱</span>
+                <div>
+                  <strong>iPhone (Safari)</strong>
+                  <span>Toque em <em>□↑</em> → "Adicionar à Tela de Início"</span>
+                </div>
+              </div>
+              <div className="hsp-save-step">
+                <span className="hsp-save-step-icon" aria-hidden="true">🤖</span>
+                <div>
+                  <strong>Android (Chrome)</strong>
+                  <span>Toque em <em>⋮</em> → "Adicionar à tela inicial"</span>
+                </div>
+              </div>
+            </div>
+            <p className="hsp-save-url">wifi-manager-react.vercel.app</p>
+          </div>
+
+          <button type="button" className="hotspot-cta-primary" style={{ marginTop: 4 }} onClick={() => void handleContinueAfterSave()}>
+            Continuar e conectar
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // Sub-tela: Formulário de cadastro
+  if (state === "guest" && (guestView === "signup-free" || guestView === "signup-paid")) {
+    const isFree = guestView === "signup-free";
+    return (
+      <main className="hotspot-page">
+        <div className="hsp-signup-card">
+          <button type="button" className="hsp-back-btn" onClick={() => { setGuestView("plans"); setRegError(null); }} aria-label="Voltar">
+            ← Voltar
+          </button>
+
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ margin: "0 auto 12px" }} />
+
+          <p className="hsp-signup-title">{isFree ? "Criar conta gratuita" : "Criar conta premium"}</p>
+          <p className="hsp-signup-subtitle">
+            {isFree
+              ? "Acesso gratuito e ilimitado a 0,5 Mbps."
+              : "Após o cadastro você escolhe seu plano e realiza o pagamento."}
+          </p>
+
+          <form className="hsp-signup-form" onSubmit={handleRegister}>
+            <input
+              type="text"
+              placeholder="Nome completo *"
+              value={regNome}
+              onChange={(e) => setRegNome(e.target.value)}
+              autoComplete="name"
+              className="hsp-login-input"
+              required
+            />
+            <input
+              type="tel"
+              placeholder="WhatsApp (opcional)"
+              value={regWhats}
+              onChange={(e) => setRegWhats(formatPhone(e.target.value))}
+              autoComplete="tel"
+              inputMode="numeric"
+              className="hsp-login-input"
+            />
+            <input
+              type="email"
+              placeholder="Email *"
+              value={regEmail}
+              onChange={(e) => setRegEmail(e.target.value)}
+              autoComplete="email"
+              className="hsp-login-input"
+              required
+            />
+            <input
+              type="password"
+              placeholder="Senha *"
+              value={regPassword}
+              onChange={(e) => setRegPassword(e.target.value)}
+              autoComplete="new-password"
+              className="hsp-login-input"
+              required
+            />
+            <input
+              type="password"
+              placeholder="Confirmar senha *"
+              value={regConfirm}
+              onChange={(e) => setRegConfirm(e.target.value)}
+              autoComplete="new-password"
+              className="hsp-login-input"
+              required
+            />
+            {regError && <p className="hsp-login-error">{regError}</p>}
+            <button
+              type="submit"
+              className="hotspot-cta-primary"
+              style={{ marginTop: 4 }}
+              disabled={regLoading}
+            >
+              {regLoading ? "Criando conta…" : isFree ? "Criar conta gratuita" : "Criar conta e escolher plano"}
+            </button>
+          </form>
+        </div>
+
+        <footer className="hotspot-footer">
+          <span>JOCUM Almirante Tamandaré · Base de Missões</span>
+        </footer>
+      </main>
+    );
+  }
+
+  // Sub-tela: Escolha de plano (padrão para visitantes)
   return (
     <main className="hotspot-page">
       <header className="hotspot-hero">
-        <div className="hotspot-connected-badge" style={{ borderColor: "rgba(255,121,42,0.4)", background: "rgba(255,121,42,0.1)", color: "#ff792a" }}>
-          Wi-Fi Gratuito
-        </div>
         <img src="/brand/logo-jocum-almirante.png" alt="JOCUM Almirante Tamandaré" className="hotspot-logo" />
-        <h1 className="hotspot-title">Internet gratuita da Base</h1>
-        <p className="hotspot-subtitle">Contribua com a infraestrutura e tenha acesso completo sem limites.</p>
+        <h1 className="hotspot-title">Internet da Base</h1>
+        <p className="hotspot-subtitle">Escolha como quer usar a internet da Base JOCUM AT.</p>
       </header>
 
-      <section className="hotspot-speed-compare" aria-label="Comparação de velocidade">
-        <div className="speed-col speed-free">
-          <span className="speed-label">Rede gratuita</span>
-          <strong className="speed-value">2 Mbps</strong>
-          <span className="speed-desc">Navegação básica</span>
-        </div>
-        <div className="speed-divider" aria-hidden="true">VS</div>
-        <div className="speed-col speed-premium">
-          <span className="speed-label">Rede premium</span>
-          <strong className="speed-value">30 Mbps</strong>
-          <span className="speed-desc">Streaming, chamadas, tudo</span>
-        </div>
-      </section>
+      <section className="hsp-plan-choice" aria-label="Escolha de plano">
+        <article className="hsp-plan-option hsp-plan-free">
+          <div className="hsp-plan-option-header">
+            <span className="hsp-plan-badge hsp-plan-badge-free">Gratuito</span>
+            <strong className="hsp-plan-speed">0,5 Mbps</strong>
+          </div>
+          <p className="hsp-plan-desc">Navegação básica · Redes sociais em texto</p>
+          <ul className="hsp-plan-features">
+            <li>Acesso ilimitado</li>
+            <li>Sem pagamento</li>
+            <li>Cadastro rápido</li>
+          </ul>
+          <button
+            type="button"
+            className="hotspot-cta-secondary"
+            onClick={() => { setSelectedPlan("free"); setGuestView("signup-free"); }}
+          >
+            Começar grátis
+          </button>
+        </article>
 
-      <section className="hotspot-plans-section" aria-label="Planos">
-        <p className="hotspot-section-label">Planos de contribuição</p>
-        <div className="hotspot-plans-grid">
-          {plans.map((plan) => (
-            <article key={plan.category} className={`hotspot-plan-card${plan.highlight ? " hotspot-plan-popular" : ""}`}>
-              {plan.highlight && <span className="hotspot-popular-badge">Popular</span>}
-              <strong className="hotspot-plan-name">{plan.category}</strong>
-              <p className="hotspot-plan-desc">{plan.description}</p>
-              <div className="hotspot-plan-price-block">
-                <span className="hotspot-price-value">{money.format(plan.monthly)}</span>
-                <span className="hotspot-price-period">/mês</span>
-              </div>
-              {plan.daily !== null && plan.daily !== undefined && (
-                <span className="hotspot-price-secondary">ou {money.format(plan.daily)}/dia</span>
-              )}
-              {plan.note && <span className="hotspot-price-secondary">{plan.note}</span>}
-            </article>
-          ))}
-        </div>
-        <div className="hotspot-discounts-row">
-          <span>10% off a partir de 3 meses</span>
-          <span aria-hidden="true">·</span>
-          <span>Diário: máx. R$ 50 para 20+ dias</span>
-        </div>
+        <article className="hsp-plan-option hsp-plan-premium">
+          <div className="hsp-plan-option-header">
+            <span className="hsp-plan-badge hsp-plan-badge-premium">Premium</span>
+            <strong className="hsp-plan-speed hsp-plan-speed-premium">50 Mbps</strong>
+          </div>
+          <p className="hsp-plan-desc">Streaming · Videochamadas · Tudo</p>
+          <ul className="hsp-plan-features">
+            <li>A partir de R$30/mês</li>
+            <li>Planos mensais e anuais</li>
+            <li>Múltiplos dispositivos</li>
+          </ul>
+          <button
+            type="button"
+            className="hotspot-cta-primary"
+            style={{ fontSize: "0.9rem", minHeight: 44 }}
+            onClick={() => { setSelectedPlan("paid"); setGuestView("signup-paid"); }}
+          >
+            Ver planos pagos
+          </button>
+        </article>
       </section>
-
-      <a href={`/?tab=signup`} className="hotspot-cta-primary">Quero acesso completo</a>
 
       <section className="hsp-login-section" aria-label="Já tenho cadastro">
         <p className="hsp-login-label">Já tenho cadastro</p>
@@ -452,50 +626,33 @@ export default function HotspotPage() {
       </footer>
 
       {recoverModal && (
-        <div className="modal-overlay" onClick={closeRecoverModal}>
+        <div className="modal-overlay" onClick={() => setRecoverModal(false)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Recuperar senha">
             <p className="modal-title">Recuperar senha</p>
-
             {!recoveredPassword ? (
               <form onSubmit={(e) => { e.preventDefault(); void fetchPassword(recoverEmail); }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginBottom: "0.75rem" }}>
                   <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)" }}>Email do cadastro</span>
-                  <input
-                    type="email"
-                    value={recoverEmail}
-                    onChange={(e) => setRecoverEmail(e.target.value)}
-                    autoComplete="email"
-                    required
-                    autoFocus={!recoverEmail}
-                  />
+                  <input type="email" value={recoverEmail} onChange={(e) => setRecoverEmail(e.target.value)} autoComplete="email" required autoFocus={!recoverEmail} />
                 </label>
                 {recoverError && <p className="modal-copied-hint" style={{ color: "#fca5a5" }}>{recoverError}</p>}
-                <button className="primary-button" type="submit" disabled={recoverLoading}>
-                  {recoverLoading ? "Buscando..." : "Buscar senha"}
-                </button>
+                <button className="primary-button" type="submit" disabled={recoverLoading}>{recoverLoading ? "Buscando..." : "Buscar senha"}</button>
               </form>
             ) : (
               <>
                 <div className="modal-password-row">
                   <span className="modal-password-value">{recoveredPassword}</span>
-                  <button
-                    type="button"
-                    className="modal-copy-button"
-                    aria-label="Copiar senha"
-                    onClick={() => { void navigator.clipboard.writeText(recoveredPassword); setPasswordCopied(true); }}
-                  >
-                    {passwordCopied ? (
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                    )}
+                  <button type="button" className="modal-copy-button" aria-label="Copiar senha" onClick={() => { void navigator.clipboard.writeText(recoveredPassword); setPasswordCopied(true); }}>
+                    {passwordCopied
+                      ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
+                      : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                    }
                   </button>
                 </div>
                 {passwordCopied && <p className="modal-copied-hint">Senha copiada!</p>}
               </>
             )}
-
-            <button type="button" className="link-button" onClick={closeRecoverModal}>Fechar</button>
+            <button type="button" className="link-button" onClick={() => setRecoverModal(false)}>Fechar</button>
           </div>
         </div>
       )}

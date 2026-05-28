@@ -3885,3 +3885,246 @@ input:disabled {
 }
 .hsp-login-btn:hover { background: rgba(255,121,42,0.12); }
 .hsp-login-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Escolha de plano (visitante) ── */
+.hsp-plan-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.hsp-plan-option {
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(33, 33, 34, 0.9);
+  padding: 14px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.hsp-plan-premium {
+  border-color: rgba(255, 121, 42, 0.45);
+  background: rgba(255, 121, 42, 0.06);
+}
+
+.hsp-plan-option-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hsp-plan-badge {
+  display: inline-block;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hsp-plan-badge-free {
+  background: rgba(255, 255, 255, 0.1);
+  color: #9d958e;
+}
+
+.hsp-plan-badge-premium {
+  background: #ff792a;
+  color: #160f0a;
+}
+
+.hsp-plan-speed {
+  font-size: 1.5rem;
+  font-weight: 950;
+  color: #746d67;
+  line-height: 1;
+}
+
+.hsp-plan-speed-premium {
+  color: #fff7ef;
+}
+
+.hsp-plan-desc {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #9d958e;
+  line-height: 1.35;
+}
+
+.hsp-plan-features {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+.hsp-plan-features li {
+  font-size: 0.72rem;
+  color: #cfc8c1;
+  padding-left: 12px;
+  position: relative;
+}
+
+.hsp-plan-features li::before {
+  content: "·";
+  position: absolute;
+  left: 0;
+  color: #ff792a;
+}
+
+/* ── Formulário de cadastro inline ── */
+.hsp-signup-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(33, 33, 34, 0.9);
+  padding: 20px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.hsp-back-btn {
+  background: none;
+  border: none;
+  color: #9d958e;
+  font-size: 0.85rem;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.hsp-back-btn:hover { color: #fff7ef; }
+
+.hsp-signup-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: #fff7ef;
+  text-align: center;
+}
+
+.hsp-signup-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #9d958e;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.hsp-signup-form {
+  display: grid;
+  gap: 8px;
+}
+
+/* ── Guia de salvar a página ── */
+.hsp-save-guide {
+  background: rgba(255, 121, 42, 0.07);
+  border: 1px solid rgba(255, 121, 42, 0.25);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.hsp-save-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 900;
+  color: #ff792a;
+}
+
+.hsp-save-desc {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #cfc8c1;
+  line-height: 1.4;
+}
+
+.hsp-save-steps {
+  display: grid;
+  gap: 8px;
+}
+
+.hsp-save-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.hsp-save-step-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.hsp-save-step div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hsp-save-step strong {
+  font-size: 0.78rem;
+  color: #fff7ef;
+}
+
+.hsp-save-step span {
+  font-size: 0.73rem;
+  color: #9d958e;
+  line-height: 1.3;
+}
+
+.hsp-save-step em {
+  font-style: normal;
+  font-weight: 700;
+  color: #ffae73;
+}
+
+.hsp-save-url {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #746d67;
+  text-align: center;
+  font-family: ui-monospace, monospace;
+}
+
+/* ── Banner de upgrade (tela de sucesso free) ── */
+.hsp-upgrade-banner {
+  background: rgba(255, 121, 42, 0.08);
+  border: 1px solid rgba(255, 121, 42, 0.25);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: center;
+  margin: 6px 0;
+}
+
+.hsp-upgrade-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: #cfc8c1;
+}
+
+.hsp-upgrade-desc {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #9d958e;
+}
+
+.hsp-upgrade-link {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: #ff792a;
+  text-decoration: none;
+}
+
+.hsp-upgrade-link:hover { text-decoration: underline; }

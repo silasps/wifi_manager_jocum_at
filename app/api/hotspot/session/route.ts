@@ -7,6 +7,7 @@ export type SessionState = "guest" | "has-voucher" | "pending-voucher" | "no-vou
 export interface SessionResponse {
   state: SessionState;
   userName?: string;
+  planoTipo?: "free" | "pago";
 }
 
 export async function GET(request: Request) {
@@ -34,10 +35,10 @@ export async function GET(request: Request) {
   const userName = cliente?.nome?.trim().split(/\s+/)[0] ?? "";
 
   const now = new Date().toISOString();
-  type VoucherRow = { id: string; status: string; data_expiracao: string | null };
+  type VoucherRow = { id: string; status: string; data_expiracao: string | null; tempo_desc: string | null };
   const { data: vouchers } = await admin
     .from("vouchers")
-    .select("id, status, data_expiracao")
+    .select("id, status, data_expiracao, tempo_desc")
     .eq("cliente_id", user.id)
     .order("data_expiracao", { ascending: false }) as { data: VoucherRow[] | null };
 
@@ -48,13 +49,20 @@ export async function GET(request: Request) {
   const active = vouchers.find(
     (v) =>
       (v.status === "criado" || v.status === "Quase venc.") &&
-      v.data_expiracao &&
-      new Date(v.data_expiracao).getTime() > Date.now(),
+      (v.tempo_desc?.toLowerCase() === "ilimitado" || (v.data_expiracao && new Date(v.data_expiracao).getTime() > Date.now())),
   );
   const pending = vouchers.find((v) => v.status === "pendente");
 
-  if (active) return NextResponse.json<SessionResponse>({ state: "has-voucher", userName });
-  if (pending) return NextResponse.json<SessionResponse>({ state: "pending-voucher", userName });
+  function planoFromVoucher(v: VoucherRow): "free" | "pago" {
+    return v.tempo_desc?.toLowerCase() === "ilimitado" ? "free" : "pago";
+  }
+
+  if (active) {
+    return NextResponse.json<SessionResponse>({ state: "has-voucher", userName, planoTipo: planoFromVoucher(active) });
+  }
+  if (pending) {
+    return NextResponse.json<SessionResponse>({ state: "pending-voucher", userName, planoTipo: planoFromVoucher(pending) });
+  }
 
   return NextResponse.json<SessionResponse>({ state: "no-voucher", userName });
 }
