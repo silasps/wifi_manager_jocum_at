@@ -38,7 +38,7 @@ UNIFI_PORT = 443
 # Domínio da sua plataforma no Vercel
 PORTAL_EXTERNO_URL = "https://wifi-manager-react.vercel.app"
 # Porta que a UDM usa para redirecionar clientes ao portal externo
-PORTAL_REDIRECT_PORT = 8880
+PORTAL_REDIRECT_PORT = 8881
 
 # Na UDM local normalmente funciona com o primeiro prefixo.
 # Mantive fallback para /v1 direto caso sua versão exponha assim.
@@ -419,21 +419,53 @@ def processar_autorizacoes():
 # ===============================
 # SERVIDOR DE REDIRECIONAMENTO
 # ===============================
+def get_mac_from_ip(client_ip):
+    try:
+        result = subprocess.run(
+            ['ip', 'neigh', 'show', client_ip],
+            capture_output=True, text=True, timeout=2
+        )
+        for line in result.stdout.strip().split('\n'):
+            if client_ip in line and 'lladdr' in line:
+                parts = line.split()
+                idx = parts.index('lladdr')
+                return parts[idx + 1]
+    except Exception:
+        pass
+    return None
+
 class PortalRedirectHandler(BaseHTTPRequestHandler):
-    """
-    Recebe requisições da UDM na porta 8880 e redireciona para o Vercel.
-    A UDM envia: GET /?id=AA:BB:CC&url=http://...&ap=...&ssid=...
-    Redirecionamos para: https://wifi-manager-react.vercel.app/hotspot?id=...
-    """
     def do_GET(self):
-        destino = f"{PORTAL_EXTERNO_URL}/hotspot{self.path}"
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        mac = params.get('id', [None])[0]
+        original_url = params.get('url', [None])[0]
+
+        if not mac:
+            client_ip = self.client_address[0]
+            mac = get_mac_from_ip(client_ip)
+            host = self.headers.get('Host', '')
+            if host:
+                original_url = f"http://{host}{self.path}"
+
+        query_params = {}
+        if mac:
+            query_params['id'] = mac
+        if original_url:
+            query_params['url'] = original_url
+
+        if query_params:
+            destino = f"{PORTAL_EXTERNO_URL}/hotspot?{urllib.parse.urlencode(query_params)}"
+        else:
+            destino = f"{PORTAL_EXTERNO_URL}/hotspot"
+
         self.send_response(302)
         self.send_header("Location", destino)
         self.send_header("Content-Length", "0")
         self.end_headers()
 
     def log_message(self, format, *args):
-        log(f"[redirect] {self.address_string()} → {args[0] if args else ''}")
+        log(f"[redirect] {self.client_address[0]} → {args[0] if args else ''}")
 
 
 def iniciar_servidor_redirect():
