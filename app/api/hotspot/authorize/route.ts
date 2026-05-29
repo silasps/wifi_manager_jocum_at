@@ -27,15 +27,15 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
 
-  // Busca voucher ativo (criado ou quase vencendo + não expirado)
+  // Busca voucher ativo: com prazo ainda válido OU ilimitado (data_expiracao null)
   const now = new Date().toISOString();
   const { data: vouchers, error: voucherError } = await admin
     .from("vouchers")
-    .select("id, data_expiracao")
+    .select("id, data_expiracao, tempo_desc")
     .eq("cliente_id", user.id)
     .in("status", ["criado", "Quase venc."])
-    .gt("data_expiracao", now)
-    .order("data_expiracao", { ascending: false })
+    .or(`data_expiracao.gt.${now},tempo_desc.eq.ilimitado`)
+    .order("data_expiracao", { ascending: false, nullsFirst: false })
     .limit(1);
 
   if (voucherError) return NextResponse.json({ error: voucherError.message }, { status: 500 });
@@ -44,10 +44,10 @@ export async function POST(request: Request) {
   }
 
   const voucher = vouchers[0];
-  const minutosRestantes = Math.max(
-    1,
-    Math.floor((new Date(voucher.data_expiracao).getTime() - Date.now()) / 60000),
-  );
+  const isIlimitado = voucher.tempo_desc?.toLowerCase() === "ilimitado";
+  const minutosRestantes = isIlimitado
+    ? 14400  // 10 dias; re-autoriza automaticamente na próxima conexão
+    : Math.max(1, Math.floor((new Date(voucher.data_expiracao).getTime() - Date.now()) / 60000));
 
   // Verifica se já existe autorização ativa para este MAC
   const { data: existing } = await admin

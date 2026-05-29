@@ -65,6 +65,7 @@ export default function HotspotPage() {
   // Sub-estado da tela de visitante
   const [guestView, setGuestView] = useState<GuestView>("plans");
   const [selectedPlan, setSelectedPlan] = useState<"free" | "paid">("free");
+  const [guestTab, setGuestTab] = useState<"login" | "contrate">("login");
 
   // Formulário de cadastro inline
   const [regNome, setRegNome] = useState("");
@@ -74,6 +75,9 @@ export default function HotspotPage() {
   const [regConfirm, setRegConfirm] = useState("");
   const [regError, setRegError] = useState<string | null>(null);
   const [regLoading, setRegLoading] = useState(false);
+
+  // Token em memória (fallback para quando localStorage é limpo pelo browser do portal cativo)
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Formulário de login (usuários existentes)
   const [loginEmail, setLoginEmail] = useState("");
@@ -109,14 +113,19 @@ export default function HotspotPage() {
     void checkAuth(macParam || getCookie("captive_mac") || "");
   }, []);
 
-  async function checkAuth(currentMac: string) {
-    const { data: { session } } = await supabase.auth.getSession();
+  async function checkAuth(currentMac: string, tokenOverride?: string) {
+    // Usa token passado diretamente (evita depender de localStorage no portal cativo)
+    let token = tokenOverride;
+    if (!token) {
+      const { data: { session } } = await supabase.auth.getSession();
+      token = session?.access_token;
+    }
 
-    if (!session) { setState("guest"); return; }
+    if (!token) { setState("guest"); return; }
 
     try {
       const res = await fetch("/api/hotspot/session", {
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { setState("guest"); return; }
 
@@ -127,7 +136,7 @@ export default function HotspotPage() {
       if (data.state === "guest") { setState("guest"); return; }
       if (data.state === "has-voucher") {
         setState("auto-connect");
-        void startAuthorize(currentMac);
+        void startAuthorize(currentMac, token);
         return;
       }
       if (data.state === "pending-voucher") { setState("pending-voucher"); return; }
@@ -137,17 +146,21 @@ export default function HotspotPage() {
     }
   }
 
-  async function startAuthorize(currentMac: string) {
+  async function startAuthorize(currentMac: string, tokenOverride?: string) {
     if (!currentMac) { setState("guest"); return; }
     setState("connecting");
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setState("guest"); return; }
+    let token = tokenOverride;
+    if (!token) {
+      const { data: { session } } = await supabase.auth.getSession();
+      token = session?.access_token;
+    }
+    if (!token) { setState("guest"); return; }
 
     try {
       const res = await fetch("/api/hotspot/authorize", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ mac: currentMac }),
       });
       const data = await res.json() as { status?: string; id?: string; error?: string };
@@ -258,9 +271,10 @@ export default function HotspotPage() {
       }
 
       storeSupabaseSession(data.access_token!, data.refresh_token!);
+      setSessionToken(data.access_token!);
       setLoginLoading(false);
-      const params = new URLSearchParams(window.location.search);
-      window.location.href = `/hotspot?${params.toString()}`;
+      // Não faz redirect (localStorage é limpo pelo browser do portal cativo no reload)
+      await checkAuth(mac, data.access_token!);
     } catch {
       setLoginError("Erro de rede. Verifique sua conexão.");
       setLoginLoading(false);
@@ -297,9 +311,10 @@ export default function HotspotPage() {
         return;
       }
 
-      // Se criou conta e tem tokens → armazena sessão sem chamar supabase.co (bloqueado no portal cativo)
+      // Armazena sessão e guarda token em state (localStorage pode ser limpo no portal cativo)
       if (data.access_token && data.refresh_token) {
         storeSupabaseSession(data.access_token, data.refresh_token);
+        setSessionToken(data.access_token);
       }
 
       setRegLoading(false);
@@ -314,10 +329,10 @@ export default function HotspotPage() {
   };
 
   const handleContinueAfterSave = async () => {
-    // Garante que a sessão está ativa antes de tentar autorizar
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setState("guest"); return; }
-    void checkAuth(mac);
+    const token = session?.access_token ?? sessionToken ?? undefined;
+    if (!token) { setState("guest"); return; }
+    void checkAuth(mac, token);
   };
 
   // ── Loading ──
@@ -546,95 +561,105 @@ export default function HotspotPage() {
     );
   }
 
-  // Sub-tela: Escolha de plano (padrão para visitantes)
+  // Sub-tela: Tela principal com abas Login | Contrate
   return (
     <main className="hotspot-page">
       <header className="hotspot-hero">
         <img src="/brand/logo-jocum-almirante.png" alt="JOCUM Almirante Tamandaré" className="hotspot-logo" />
         <h1 className="hotspot-title">Internet da Base</h1>
-        <p className="hotspot-subtitle">Escolha como quer usar a internet da Base JOCUM AT.</p>
-        <button
-          type="button"
-          className="hsp-already-member-btn"
-          onClick={() => document.getElementById("hsp-login-anchor")?.scrollIntoView({ behavior: "smooth" })}
-        >
-          Já tenho cadastro →
-        </button>
       </header>
 
-      <section className="hsp-plan-choice" aria-label="Escolha de plano">
-        <article className="hsp-plan-option hsp-plan-free">
-          <div className="hsp-plan-option-header">
-            <span className="hsp-plan-badge hsp-plan-badge-free">Gratuito</span>
-            <strong className="hsp-plan-speed">0,5 Mbps</strong>
-          </div>
-          <p className="hsp-plan-desc">Navegação básica · Redes sociais em texto</p>
-          <ul className="hsp-plan-features">
-            <li>Acesso ilimitado</li>
-            <li>Sem pagamento</li>
-            <li>Cadastro rápido</li>
-          </ul>
-          <button
-            type="button"
-            className="hotspot-cta-secondary"
-            onClick={() => { setSelectedPlan("free"); setGuestView("signup-free"); }}
-          >
-            Começar grátis
-          </button>
-        </article>
+      <div className="tabs" role="tablist" aria-label="Login ou contratação">
+        <button
+          type="button"
+          className={guestTab === "login" ? "active" : ""}
+          onClick={() => setGuestTab("login")}
+        >
+          Login
+        </button>
+        <button
+          type="button"
+          className={guestTab === "contrate" ? "active" : ""}
+          onClick={() => setGuestTab("contrate")}
+        >
+          Contrate
+        </button>
+      </div>
 
-        <article className="hsp-plan-option hsp-plan-premium">
-          <div className="hsp-plan-option-header">
-            <span className="hsp-plan-badge hsp-plan-badge-premium">Premium</span>
-            <strong className="hsp-plan-speed hsp-plan-speed-premium">50 Mbps</strong>
-          </div>
-          <p className="hsp-plan-desc">Streaming · Videochamadas · Tudo</p>
-          <ul className="hsp-plan-features">
-            <li>A partir de R$30/mês</li>
-            <li>Planos mensais e anuais</li>
-            <li>Múltiplos dispositivos</li>
-          </ul>
-          <button
-            type="button"
-            className="hotspot-cta-primary"
-            style={{ fontSize: "0.9rem", minHeight: 44 }}
-            onClick={() => { window.location.href = "/?tab=signup&from=portal"; }}
-          >
-            Ver planos pagos
-          </button>
-        </article>
-      </section>
+      {guestTab === "login" ? (
+        <section className="hsp-login-section" aria-label="Login">
+          <form className="hsp-login-form" onSubmit={handleLogin}>
+            <input
+              type="email"
+              placeholder="Email"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              autoComplete="email"
+              required
+              className="hsp-login-input"
+            />
+            <input
+              type="password"
+              placeholder="Senha"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              className="hsp-login-input"
+            />
+            {loginError && <p className="hsp-login-error">{loginError}</p>}
+            <button type="submit" className="hotspot-cta-secondary hsp-login-btn" disabled={loginLoading}>
+              {loginLoading ? "Entrando…" : "Entrar"}
+            </button>
+            <button type="button" className="link-button" onClick={openRecoverModal} disabled={loginLoading}>
+              Esqueceu sua senha?
+            </button>
+          </form>
+        </section>
+      ) : (
+        <section className="hsp-plan-choice" aria-label="Escolha de plano">
+          <article className="hsp-plan-option hsp-plan-free">
+            <div className="hsp-plan-option-header">
+              <span className="hsp-plan-badge hsp-plan-badge-free">Gratuito</span>
+              <strong className="hsp-plan-speed">0,5 Mbps</strong>
+            </div>
+            <p className="hsp-plan-desc">Navegação básica · Redes sociais em texto</p>
+            <ul className="hsp-plan-features">
+              <li>Acesso ilimitado</li>
+              <li>Sem pagamento</li>
+              <li>Cadastro rápido</li>
+            </ul>
+            <button
+              type="button"
+              className="hotspot-cta-secondary"
+              onClick={() => { setSelectedPlan("free"); setGuestView("signup-free"); }}
+            >
+              Começar grátis
+            </button>
+          </article>
 
-      <section id="hsp-login-anchor" className="hsp-login-section" aria-label="Já tenho cadastro">
-        <p className="hsp-login-label">Já tenho cadastro</p>
-        <form className="hsp-login-form" onSubmit={handleLogin}>
-          <input
-            type="email"
-            placeholder="Email"
-            value={loginEmail}
-            onChange={(e) => setLoginEmail(e.target.value)}
-            autoComplete="email"
-            required
-            className="hsp-login-input"
-          />
-          <input
-            type="password"
-            placeholder="Senha"
-            value={loginPassword}
-            onChange={(e) => setLoginPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-            className="hsp-login-input"
-          />
-          {loginError && <p className="hsp-login-error">{loginError}</p>}
-          <button type="submit" className="hotspot-cta-secondary hsp-login-btn" disabled={loginLoading}>
-            {loginLoading ? "Entrando…" : "Entrar"}
-          </button>
-          <button type="button" className="link-button" onClick={openRecoverModal} disabled={loginLoading}>
-            Esqueceu sua senha?
-          </button>
-        </form>
-      </section>
+          <article className="hsp-plan-option hsp-plan-premium">
+            <div className="hsp-plan-option-header">
+              <span className="hsp-plan-badge hsp-plan-badge-premium">Premium</span>
+              <strong className="hsp-plan-speed hsp-plan-speed-premium">50 Mbps</strong>
+            </div>
+            <p className="hsp-plan-desc">Streaming · Videochamadas · Tudo</p>
+            <ul className="hsp-plan-features">
+              <li>A partir de R$30/mês</li>
+              <li>Planos mensais e anuais</li>
+              <li>Múltiplos dispositivos</li>
+            </ul>
+            <button
+              type="button"
+              className="hotspot-cta-primary"
+              style={{ fontSize: "0.9rem", minHeight: 44 }}
+              onClick={() => { window.location.href = "/?tab=signup&from=portal"; }}
+            >
+              Ver planos pagos
+            </button>
+          </article>
+        </section>
+      )}
 
       <footer className="hotspot-footer">
         <span>JOCUM Almirante Tamandaré · Base de Missões</span>

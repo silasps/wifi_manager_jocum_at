@@ -149,7 +149,7 @@ def buscar_cliente_nome_formatado(cliente_uid):
 import uuid
 def gerar_codigo_formatado(tempo, quota, note, velocidade_kbps=None):
     if velocidade_kbps is None or velocidade_kbps <= 0:
-        velocidade_kbps = DEFAULT_VELOCIDADE_KBPS
+        velocidade_kbps = VELOCIDADE_PAGO_KBPS
     external_id = str(uuid.uuid4())
     site_id = "6834b054b243651f00c8dcc5"  # substitua pelo seu site_id real da UDM
     admin_name = "Contato"  # ou o nome desejado
