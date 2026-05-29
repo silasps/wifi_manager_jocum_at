@@ -409,6 +409,7 @@ def processar_autorizacoes():
     try:
         registros = buscar_autorizacoes_pendentes()
         if not registros:
+            log("Sem autorizações pendentes.")
             return
 
         for reg in registros:
