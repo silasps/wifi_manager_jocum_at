@@ -8,7 +8,10 @@ export interface SessionResponse {
   state: SessionState;
   userName?: string;
   planoTipo?: "free" | "pago";
+  auth_id?: string;
 }
+
+const MAC_REGEX = /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/;
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("Authorization");
@@ -34,7 +37,6 @@ export async function GET(request: Request) {
 
   const userName = cliente?.nome?.trim().split(/\s+/)[0] ?? "";
 
-  const now = new Date().toISOString();
   type VoucherRow = { id: string; status: string; data_expiracao: string | null; tempo_desc: string | null };
   const { data: vouchers } = await admin
     .from("vouchers")
@@ -49,7 +51,8 @@ export async function GET(request: Request) {
   const active = vouchers.find(
     (v) =>
       (v.status === "criado" || v.status === "Quase venc.") &&
-      (v.tempo_desc?.toLowerCase() === "ilimitado" || (v.data_expiracao && new Date(v.data_expiracao).getTime() > Date.now())),
+      (v.tempo_desc?.toLowerCase() === "ilimitado" ||
+        (v.data_expiracao && new Date(v.data_expiracao).getTime() > Date.now())),
   );
   const pending = vouchers.find((v) => v.status === "pendente");
 
@@ -58,8 +61,48 @@ export async function GET(request: Request) {
   }
 
   if (active) {
-    return NextResponse.json<SessionResponse>({ state: "has-voucher", userName, planoTipo: planoFromVoucher(active) });
+    // Se MAC foi passado, cria/recupera registro de autorização server-side
+    // (evita chamada extra do browser do portal cativo para /authorize)
+    const macRaw = new URL(request.url).searchParams.get("mac");
+    const mac = macRaw?.toLowerCase().trim();
+    let auth_id: string | undefined;
+
+    if (mac && MAC_REGEX.test(mac)) {
+      const { data: existing } = await admin
+        .from("autorizacoes")
+        .select("id, status")
+        .eq("cliente_id", user.id)
+        .eq("mac_address", mac)
+        .in("status", ["autorizado", "pendente"])
+        .order("status", { ascending: true }) // "autorizado" antes de "pendente"
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        auth_id = existing[0].id;
+      } else {
+        const isIlimitado = active.tempo_desc?.toLowerCase() === "ilimitado";
+        const minutosRestantes = isIlimitado
+          ? 14400
+          : Math.max(1, Math.floor((new Date(active.data_expiracao!).getTime() - Date.now()) / 60000));
+
+        const { data: inserted } = await admin
+          .from("autorizacoes")
+          .insert({ cliente_id: user.id, mac_address: mac, minutos: minutosRestantes, status: "pendente" })
+          .select("id")
+          .single();
+
+        if (inserted) auth_id = inserted.id;
+      }
+    }
+
+    return NextResponse.json<SessionResponse>({
+      state: "has-voucher",
+      userName,
+      planoTipo: planoFromVoucher(active),
+      auth_id,
+    });
   }
+
   if (pending) {
     return NextResponse.json<SessionResponse>({ state: "pending-voucher", userName, planoTipo: planoFromVoucher(pending) });
   }

@@ -115,7 +115,6 @@ export default function HotspotPage() {
   }, []);
 
   async function checkAuth(currentMac: string, tokenOverride?: string) {
-    // Usa token passado diretamente (evita depender de localStorage no portal cativo)
     let token = tokenOverride;
     if (!token) {
       const { data: { session } } = await supabase.auth.getSession();
@@ -125,19 +124,34 @@ export default function HotspotPage() {
     if (!token) { setState("guest"); return; }
 
     try {
-      const res = await fetch("/api/hotspot/session", {
+      // Passa o MAC para o session endpoint criar a autorização server-side
+      // (evita chamada extra do browser do portal cativo)
+      const macParam = currentMac ? `?mac=${encodeURIComponent(currentMac)}` : "";
+      const res = await fetch(`/api/hotspot/session${macParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { setState("guest"); return; }
 
-      const data = await res.json() as { state: string; userName?: string; planoTipo?: "free" | "pago" };
+      const data = await res.json() as {
+        state: string;
+        userName?: string;
+        planoTipo?: "free" | "pago";
+        auth_id?: string;
+      };
       setUserName(data.userName ?? "");
       setPlanoTipo(data.planoTipo ?? null);
 
       if (data.state === "guest") { setState("guest"); return; }
       if (data.state === "has-voucher") {
-        setState("auto-connect");
-        void startAuthorize(currentMac, token);
+        if (data.auth_id) {
+          // Autorização criada server-side — só precisa fazer polling
+          setState("connecting");
+          setAuthId(data.auth_id);
+        } else {
+          // Fallback se MAC não foi passado
+          setState("auto-connect");
+          void startAuthorize(currentMac, token);
+        }
         return;
       }
       if (data.state === "pending-voucher") { setState("pending-voucher"); return; }
