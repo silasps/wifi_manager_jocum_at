@@ -60,6 +60,7 @@ export default function HotspotPage() {
   const [userName, setUserName] = useState("");
   const [planoTipo, setPlanoTipo] = useState<"free" | "pago" | null>(null);
   const [authId, setAuthId] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
 
   // Sub-estado da tela de visitante
@@ -168,6 +169,7 @@ export default function HotspotPage() {
       if (data.status === "autorizado") { setState("success"); return; }
       if (data.id) { setAuthId(data.id); return; }
       // Sem id e sem sucesso = erro do endpoint (403, 500, etc.)
+      setAuthError(`HTTP ${res.status}: ${data.error ?? "sem detalhe"}`);
       setState("auth-error");
     } catch {
       setState("auto-connect");
@@ -371,6 +373,7 @@ export default function HotspotPage() {
           <div className="hsp-check-circle" style={{ borderColor: "#f87171", background: "rgba(248,113,113,0.1)", color: "#f87171" }} aria-hidden="true">✕</div>
           <p className="hsp-center-title">Não foi possível conectar</p>
           <p className="hsp-center-sub">Ocorreu um erro ao autorizar seu dispositivo. Tente novamente.</p>
+          {authError && <p className="hsp-center-sub" style={{ fontSize: "0.7rem", opacity: 0.5, marginTop: 4 }}>{authError}</p>}
           <button type="button" className="hotspot-cta-primary" style={{ marginTop: 8 }} onClick={() => { setAuthId(null); void startAuthorize(mac); }}>
             Tentar novamente
           </button>
