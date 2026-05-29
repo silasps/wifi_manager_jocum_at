@@ -27,27 +27,33 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
 
-  // Busca voucher ativo: com prazo ainda válido OU ilimitado (data_expiracao null)
-  const now = new Date().toISOString();
-  const { data: vouchers, error: voucherError } = await admin
+  // Busca todos os vouchers ativos (criado/quase venc.) e filtra em JS
+  // para evitar problemas com .or() do PostgREST em timestamps com null
+  const { data: allVouchers, error: voucherError } = await admin
     .from("vouchers")
     .select("id, data_expiracao, tempo_desc")
     .eq("cliente_id", user.id)
     .in("status", ["criado", "Quase venc."])
-    .or(`data_expiracao.gt.${now},tempo_desc.eq.ilimitado`)
-    .order("data_expiracao", { ascending: false, nullsFirst: false })
-    .limit(1);
+    .order("data_expiracao", { ascending: false })
+    .limit(10);
 
   if (voucherError) return NextResponse.json({ error: voucherError.message }, { status: 500 });
-  if (!vouchers || vouchers.length === 0) {
+
+  const now = Date.now();
+  type VRow = { id: string; data_expiracao: string | null; tempo_desc: string | null };
+  const voucher = (allVouchers as VRow[] | null)?.find((v) =>
+    v.tempo_desc?.toLowerCase() === "ilimitado" ||
+    (v.data_expiracao && new Date(v.data_expiracao).getTime() > now),
+  );
+
+  if (!voucher) {
     return NextResponse.json({ error: "Sem voucher ativo" }, { status: 403 });
   }
 
-  const voucher = vouchers[0];
   const isIlimitado = voucher.tempo_desc?.toLowerCase() === "ilimitado";
   const minutosRestantes = isIlimitado
     ? 14400  // 10 dias; re-autoriza automaticamente na próxima conexão
-    : Math.max(1, Math.floor((new Date(voucher.data_expiracao).getTime() - Date.now()) / 60000));
+    : Math.max(1, Math.floor((new Date(voucher.data_expiracao!).getTime() - Date.now()) / 60000));
 
   // Verifica se já existe autorização ativa para este MAC
   const { data: existing } = await admin

@@ -166,7 +166,9 @@ export default function HotspotPage() {
       const data = await res.json() as { status?: string; id?: string; error?: string };
 
       if (data.status === "autorizado") { setState("success"); return; }
-      if (data.id) setAuthId(data.id);
+      if (data.id) { setAuthId(data.id); return; }
+      // Sem id e sem sucesso = erro do endpoint (403, 500, etc.)
+      setState("auth-error");
     } catch {
       setState("auto-connect");
     }
@@ -351,7 +353,7 @@ export default function HotspotPage() {
     return (
       <main className="hotspot-page">
         <div className="hsp-center-card">
-          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" />
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ filter: "brightness(0) invert(1)" }} />
           <span className="voucher-pending-spinner hsp-big-spinner" aria-hidden="true" />
           <p className="hsp-center-title">Reconectando à rede…</p>
           <p className="hsp-center-sub">Aguarde alguns instantes.</p>
@@ -365,7 +367,7 @@ export default function HotspotPage() {
     return (
       <main className="hotspot-page">
         <div className="hsp-center-card">
-          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" />
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ filter: "brightness(0) invert(1)" }} />
           <div className="hsp-check-circle" style={{ borderColor: "#f87171", background: "rgba(248,113,113,0.1)", color: "#f87171" }} aria-hidden="true">✕</div>
           <p className="hsp-center-title">Não foi possível conectar</p>
           <p className="hsp-center-sub">Ocorreu um erro ao autorizar seu dispositivo. Tente novamente.</p>
@@ -404,7 +406,7 @@ export default function HotspotPage() {
     return (
       <main className="hotspot-page">
         <div className="hsp-center-card">
-          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" />
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ filter: "brightness(0) invert(1)" }} />
           <span className="voucher-pending-spinner hsp-big-spinner" aria-hidden="true" />
           <p className="hsp-center-title">Preparando seu acesso…</p>
           <p className="hsp-center-sub">Isso leva menos de 1 minuto. Não feche esta tela.</p>
@@ -418,7 +420,7 @@ export default function HotspotPage() {
     return (
       <main className="hotspot-page">
         <div className="hsp-center-card">
-          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" />
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ filter: "brightness(0) invert(1)" }} />
           <p className="hsp-center-title">{userName ? `Olá, ${userName}.` : "Acesso encerrado."}</p>
           <p className="hsp-center-sub">Seu acesso expirou.</p>
           <a href="/renovacao" className="hotspot-cta-primary" style={{ marginTop: 8 }}>Renovar ou fazer upgrade</a>
@@ -442,7 +444,7 @@ export default function HotspotPage() {
     return (
       <main className="hotspot-page">
         <div className="hsp-center-card">
-          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" />
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ filter: "brightness(0) invert(1)" }} />
           <div className="hsp-check-circle" style={{ borderColor: "#4ade80", background: "rgba(74,222,128,0.1)", color: "#4ade80" }} aria-hidden="true">✓</div>
           <p className="hsp-center-title">Conta criada!</p>
           <p className="hsp-center-sub">Seu acesso gratuito está sendo ativado.</p>
@@ -487,7 +489,7 @@ export default function HotspotPage() {
             ← Voltar
           </button>
 
-          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ margin: "0 auto 12px" }} />
+          <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ filter: "brightness(0) invert(1)", margin: "0 auto 12px" }} />
 
           <p className="hsp-signup-title">{isFree ? "Criar conta gratuita" : "Criar conta premium"}</p>
           <p className="hsp-signup-subtitle">
