@@ -514,11 +514,44 @@ def buscar_autorizacoes_revogadas():
 
 
 def kick_mac_unifi(mac):
-    site_id, client_id, mac_norm = buscar_unifi_client_id_por_mac(mac)
-    payload = {"action": "BLOCK"}
-    unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
-    payload_unblock = {"action": "UNBLOCK"}
-    unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload_unblock)
+    mac_norm = _normalizar_mac(mac)
+    # Usar API local do controller (roda na própria UDM) — aceita kick por MAC direto
+    try:
+        ctx = ssl._create_unverified_context()
+        conn = http.client.HTTPSConnection("127.0.0.1", 443, context=ctx)
+        login_payload = json.dumps({
+            "username": os.environ.get("UNIFI_USER", "admin"),
+            "password": os.environ.get("UNIFI_PASS", ""),
+        })
+        conn.request("POST", "/api/auth/login", login_payload,
+                     {"Content-Type": "application/json"})
+        login_res = conn.getresponse()
+        cookies = login_res.getheader("Set-Cookie") or ""
+        login_res.read()
+
+        cmd_payload = json.dumps({"cmd": "unauthorize-guest", "mac": mac_norm.lower()})
+        headers = {"Content-Type": "application/json", "Cookie": cookies}
+        conn.request("POST", "/proxy/network/api/s/default/cmd/stamgr", cmd_payload, headers)
+        res = conn.getresponse()
+        body = res.read().decode()
+        conn.close()
+        if res.status == 200:
+            log(f"✅ Kick local OK para {mac_norm}")
+            return
+        raise Exception(f"Kick local falhou: {res.status} - {body}")
+    except Exception as e:
+        log(f"⚠️ Kick local falhou ({e}), tentando API de integração...")
+
+    # Fallback: API de integração
+    site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
+    try:
+        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
+                  {"action": "UNAUTHORIZE_GUEST_ACCESS"})
+    except Exception:
+        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
+                  {"action": "BLOCK"})
+        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
+                  {"action": "UNBLOCK"})
 
 
 def processar_revogacoes():
