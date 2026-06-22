@@ -91,6 +91,7 @@ export default function HomePage() {
   const [captiveUrl, setCaptiveUrl] = useState<string>("http://www.google.com");
   const [captiveConnecting, setCaptiveConnecting] = useState(false);
   const [captiveError, setCaptiveError] = useState(false);
+  const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
   const [captiveCountdown, setCaptiveCountdown] = useState(30);
   const seenPendingIds = useRef<Set<string>>(new Set());
 
@@ -140,27 +141,42 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    const mac = getCookie("captive_mac");
-    const url = getCookie("captive_url") ?? "http://www.google.com";
-    if (!mac) return;
-
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await supabase
-        .from("autorizacoes")
-        .select("id")
-        .eq("cliente_id", user.id)
-        .eq("mac_address", mac.toLowerCase())
-        .eq("status", "autorizado")
-        .limit(1);
 
-      if (data && data.length > 0) {
-        deleteCookie("captive_mac");
-        deleteCookie("captive_url");
-      } else {
-        setCaptiveMac(mac);
-        setCaptiveUrl(url);
+      const mac = getCookie("captive_mac");
+      if (mac) {
+        const { data } = await supabase
+          .from("autorizacoes")
+          .select("id")
+          .eq("cliente_id", user.id)
+          .eq("mac_address", mac.toLowerCase())
+          .eq("status", "autorizado")
+          .limit(1);
+
+        if (data && data.length > 0) {
+          deleteCookie("captive_mac");
+          deleteCookie("captive_url");
+        } else {
+          setCaptiveMac(mac);
+          setCaptiveUrl(getCookie("captive_url") ?? "http://www.google.com");
+          return;
+        }
+      }
+
+      // Se não tem cookie mas também não tem autorização premium ativa, sugerir upgrade
+      if (!mac) {
+        const { data: premiumAuth } = await supabase
+          .from("autorizacoes")
+          .select("id")
+          .eq("cliente_id", user.id)
+          .eq("status", "autorizado")
+          .limit(1);
+
+        if (!premiumAuth || premiumAuth.length === 0) {
+          setShowUpgradeBanner(true);
+        }
       }
     })();
   }, []);
@@ -354,6 +370,15 @@ export default function HomePage() {
                   </div>
                 </div>
               </section>
+
+              {showUpgradeBanner && !captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && (
+                <div className="captive-banner" role="status" style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)" }}>
+                  <div className="captive-banner-text">
+                    <strong>Ativar acesso premium</strong>
+                    <span>Esqueça a rede Wi-Fi, reconecte e escolha &quot;Conectar&quot; quando o portal aparecer.</span>
+                  </div>
+                </div>
+              )}
 
               {captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && !captiveConnecting && (
                 <div className="captive-banner" role="status">
