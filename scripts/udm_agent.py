@@ -485,23 +485,40 @@ def _garantir_guest_record(mac_norm):
         log(f"✅ Guest record criado para {mac_norm}")
 
 
-def _autorizar_via_mongo(mac_norm, minutos):
+GUEST_USER_ID = os.environ.get("GUEST_USER_ID", "5b0e3ee1-a588-460e-8572-2c658f52fde2")
+
+
+def _autorizar_via_mongo(mac_norm, minutos, velocidade_kbps=None):
     """Autoriza guest direto no MongoDB — funciona para MACs privados não visíveis na API."""
     agora = int(time.time())
     fim = agora + int(minutos) * 60
+    qos_fields = ""
+    if velocidade_kbps:
+        qos_fields = f', "qos_rate_max_up": {velocidade_kbps}, "qos_rate_max_down": {velocidade_kbps}, "qos_overwrite": true'
     result = subprocess.run(
         ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
-         f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong({agora}), "end": NumberLong({fim}), "site_id": "6834b054b243651f00c8dcc5"}}}}, {{"upsert": true}})'],
+         f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong({agora}), "end": NumberLong({fim}), "site_id": "6834b054b243651f00c8dcc5"{qos_fields}}}}}, {{"upsert": true}})'],
         capture_output=True, text=True, timeout=5
     )
     if result.returncode != 0:
         raise Exception(f"MongoDB falhou: {result.stderr}")
-    log(f"✅ Autorizado via MongoDB: {mac_norm} por {minutos} min")
+    label = f"{velocidade_kbps} Kbps" if velocidade_kbps else "sem limite"
+    log(f"✅ Autorizado via MongoDB: {mac_norm} por {minutos} min ({label})")
 
 
-def autorizar_mac_unifi(mac, minutos):
+def _aplicar_qos_mongo(mac_norm, velocidade_kbps):
+    """Aplica QoS no guest record após autorização via API."""
+    subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"qos_rate_max_up": {velocidade_kbps}, "qos_rate_max_down": {velocidade_kbps}, "qos_overwrite": true}}}})'],
+        capture_output=True, text=True, timeout=5
+    )
+
+
+def autorizar_mac_unifi(mac, minutos, is_free=False):
     """Autoriza guest via API de integração, com fallback para MongoDB."""
     mac_norm = _normalizar_mac(mac).lower()
+    velocidade = VELOCIDADE_FREE_KBPS if is_free else None
     _garantir_guest_record(mac_norm)
     # Tentar API de integração
     try:
@@ -510,11 +527,15 @@ def autorizar_mac_unifi(mac, minutos):
             "action": "AUTHORIZE_GUEST_ACCESS",
             "timeLimitMinutes": int(minutos),
         }
-        return unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+        result = unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+        if velocidade:
+            _aplicar_qos_mongo(mac_norm, velocidade)
+            log(f"✅ QoS aplicado: {mac_norm} → {velocidade} Kbps")
+        return result
     except Exception as e:
         log(f"⚠️ API falhou ({e}), autorizando via MongoDB...")
-    # Fallback: MongoDB direto
-    _autorizar_via_mongo(mac_norm, minutos)
+    # Fallback: MongoDB direto (com QoS se free)
+    _autorizar_via_mongo(mac_norm, minutos, velocidade)
 
 
 def processar_autorizacoes():
@@ -528,11 +549,12 @@ def processar_autorizacoes():
             rid = reg["id"]
             mac = reg["mac_address"]
             minutos = int(reg.get("minutos", 60))
+            is_free = reg.get("cliente_id") == GUEST_USER_ID
 
             try:
-                autorizar_mac_unifi(mac, minutos)
+                autorizar_mac_unifi(mac, minutos, is_free=is_free)
                 atualizar_autorizacao_status(rid, "autorizado")
-                log(f"✅ MAC autorizado: {mac} | {minutos} min")
+                log(f"✅ MAC autorizado: {mac} | {minutos} min | {'free' if is_free else 'premium'}")
             except Exception as exc:
                 atualizar_autorizacao_status(rid, "erro")
                 log(f"❌ Erro ao autorizar MAC {mac}: {exc}")
