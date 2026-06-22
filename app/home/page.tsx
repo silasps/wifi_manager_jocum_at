@@ -90,6 +90,7 @@ export default function HomePage() {
   const [captiveMac, setCaptiveMac] = useState<string | null>(null);
   const [captiveUrl, setCaptiveUrl] = useState<string>("http://www.google.com");
   const [captiveConnecting, setCaptiveConnecting] = useState(false);
+  const [captiveError, setCaptiveError] = useState(false);
   const seenPendingIds = useRef<Set<string>>(new Set());
 
   const currentVoucher = vouchers[0] ?? null;
@@ -180,10 +181,12 @@ export default function HomePage() {
   const handleCaptiveConnect = async () => {
     if (!captiveMac || captiveConnecting) return;
     setCaptiveConnecting(true);
+    setCaptiveError(false);
 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       setCaptiveConnecting(false);
+      setCaptiveError(true);
       return;
     }
 
@@ -194,6 +197,12 @@ export default function HomePage() {
         body: JSON.stringify({ mac: captiveMac }),
       });
       const data = await res.json();
+
+      if (!res.ok) {
+        setCaptiveConnecting(false);
+        setCaptiveError(true);
+        return;
+      }
 
       if (data.status === "autorizado") {
         deleteCookie("captive_mac");
@@ -212,11 +221,20 @@ export default function HomePage() {
             deleteCookie("captive_mac");
             deleteCookie("captive_url");
             window.location.href = captiveUrl;
+          } else if (pollData.status === "erro") {
+            clearInterval(poll);
+            setCaptiveConnecting(false);
+            setCaptiveError(true);
           }
         }, 3000);
+        setTimeout(() => { clearInterval(poll); setCaptiveConnecting(false); setCaptiveError(true); }, 30_000);
+      } else {
+        setCaptiveConnecting(false);
+        setCaptiveError(true);
       }
     } catch {
       setCaptiveConnecting(false);
+      setCaptiveError(true);
     }
   };
 
@@ -292,6 +310,22 @@ export default function HomePage() {
                     <strong>Liberando acesso à rede…</strong>
                     <span>Aguarde alguns segundos.</span>
                   </div>
+                </div>
+              )}
+
+              {captiveError && !captiveConnecting && (
+                <div className="voucher-pending-banner" role="alert" style={{ borderColor: "rgba(248,113,113,0.3)", background: "rgba(248,113,113,0.06)" }}>
+                  <div>
+                    <strong style={{ color: "#fca5a5" }}>Não foi possível liberar o acesso</strong>
+                    <span>Verifique sua conexão Wi-Fi e tente novamente.</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="captive-banner-btn"
+                    onClick={() => { setCaptiveError(false); void handleCaptiveConnect(); }}
+                  >
+                    Tentar novamente
+                  </button>
                 </div>
               )}
 
