@@ -129,5 +129,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
+  // Server-side polling: aguarda o agent processar (até 45s)
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const { data: check } = await admin
+      .from("autorizacoes")
+      .select("status")
+      .eq("id", inserted.id)
+      .single();
+    if (check?.status === "autorizado") {
+      return NextResponse.json({ status: "autorizado", auth_id: inserted.id });
+    }
+    if (check?.status === "erro") {
+      return NextResponse.json({ status: "erro", auth_id: inserted.id });
+    }
+  }
+
   return NextResponse.json({ status: "pendente", auth_id: inserted.id });
 }
