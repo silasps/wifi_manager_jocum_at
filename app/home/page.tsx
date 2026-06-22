@@ -181,7 +181,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!captiveConnecting) return;
-    setCaptiveCountdown(30);
+    setCaptiveCountdown(60);
     const timer = setInterval(() => setCaptiveCountdown((c) => c > 0 ? c - 1 : 0), 1000);
     return () => clearInterval(timer);
   }, [captiveConnecting]);
@@ -221,21 +221,25 @@ export default function HomePage() {
 
       if (data.id) {
         const poll = setInterval(async () => {
-          const pollRes = await fetch(`/api/hotspot/authorize/${data.id}`);
-          if (!pollRes.ok) return;
-          const pollData = await pollRes.json();
-          if (pollData.status === "autorizado") {
-            clearInterval(poll);
-            deleteCookie("captive_mac");
-            deleteCookie("captive_url");
-            window.location.href = captiveUrl;
-          } else if (pollData.status === "erro") {
-            clearInterval(poll);
-            setCaptiveConnecting(false);
-            setCaptiveError(true);
+          try {
+            const pollRes = await fetch(`/api/hotspot/authorize/${data.id}`);
+            if (!pollRes.ok) return;
+            const pollData = await pollRes.json();
+            if (pollData.status === "autorizado") {
+              clearInterval(poll);
+              deleteCookie("captive_mac");
+              deleteCookie("captive_url");
+              window.location.href = captiveUrl;
+            } else if (pollData.status === "erro") {
+              clearInterval(poll);
+              setCaptiveConnecting(false);
+              setCaptiveError(true);
+            }
+          } catch {
+            // Ignora falhas temporárias de rede no captive portal
           }
         }, 3000);
-        setTimeout(() => { clearInterval(poll); setCaptiveConnecting(false); setCaptiveError(true); }, 30_000);
+        setTimeout(() => { clearInterval(poll); setCaptiveConnecting(false); setCaptiveError(true); }, 60_000);
       } else {
         setCaptiveConnecting(false);
         setCaptiveError(true);
