@@ -591,12 +591,11 @@ def kick_mac_unifi(mac):
                   {"action": "UNAUTHORIZE_GUEST_ACCESS"})
         log(f"✅ Kick API OK (UNAUTHORIZE_GUEST_ACCESS) para {mac_norm}")
     except Exception as e:
-        log(f"⚠️ Kick API falhou ({e}), expirando via MongoDB...")
-    # 2) Expirar no MongoDB (mantém registro para re-autorização futura)
-    agora = int(time.time())
+        log(f"⚠️ Kick API falhou ({e})")
+    # 2) Remover do MongoDB (desconecta de verdade)
     subprocess.run(
         ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
-         f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"end": NumberLong({agora - 1})}}}})'],
+         f'db.guest.remove({{"mac": "{mac_norm}"}})'],
         capture_output=True, text=True, timeout=5
     )
 
