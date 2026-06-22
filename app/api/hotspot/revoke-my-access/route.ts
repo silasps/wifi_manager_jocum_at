@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     .from("autorizacoes")
     .update({ status: "revogado" })
     .eq("cliente_id", user.id)
-    .in("status", ["autorizado", "pendente"]);
+    .in("status", ["autorizado", "pendente", "erro", "kick_erro"]);
 
   if (revokeError) {
     return NextResponse.json({ error: revokeError.message }, { status: 500 });
