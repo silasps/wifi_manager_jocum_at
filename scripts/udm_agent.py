@@ -470,13 +470,22 @@ def buscar_unifi_client_id_por_mac(mac):
 
 
 def autorizar_mac_unifi(mac, minutos):
-    """Autoriza cliente guest pela API de integração."""
-    site_id, client_id, mac_norm = buscar_unifi_client_id_por_mac(mac)
-    payload = {
-        "action": "AUTHORIZE_GUEST_ACCESS",
-        "timeLimitMinutes": int(minutos),
-    }
-    return unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+    """Autoriza cliente guest pela API de integração com retry."""
+    mac_norm = _normalizar_mac(mac).lower()
+    last_err = None
+    for tentativa in range(3):
+        try:
+            site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
+            payload = {
+                "action": "AUTHORIZE_GUEST_ACCESS",
+                "timeLimitMinutes": int(minutos),
+            }
+            return unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+        except Exception as e:
+            last_err = e
+            log(f"⚠️ Tentativa {tentativa+1}/3 falhou para {mac_norm}: {e}")
+            time.sleep(3)
+    raise last_err
 
 
 def processar_autorizacoes():
