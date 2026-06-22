@@ -279,10 +279,9 @@ export default function HotspotPage() {
   useEffect(() => {
     if (state !== "success") return;
     if (countdown <= 0) {
-      const dest = getCookie("captive_url") || redirectUrl;
       document.cookie = "captive_mac=; Max-Age=0; Path=/; SameSite=Lax";
       document.cookie = "captive_url=; Max-Age=0; Path=/; SameSite=Lax";
-      window.location.href = dest;
+      window.location.href = "https://www.google.com";
       return;
     }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
