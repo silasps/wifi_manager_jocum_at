@@ -91,6 +91,7 @@ export default function HomePage() {
   const [captiveUrl, setCaptiveUrl] = useState<string>("http://www.google.com");
   const [captiveConnecting, setCaptiveConnecting] = useState(false);
   const [captiveError, setCaptiveError] = useState(false);
+  const [captiveCountdown, setCaptiveCountdown] = useState(30);
   const seenPendingIds = useRef<Set<string>>(new Set());
 
   const currentVoucher = vouchers[0] ?? null;
@@ -177,6 +178,13 @@ export default function HomePage() {
     }, 5000);
     return () => { alive = false; clearInterval(interval); };
   }, [hasPendingVoucher, loading]);
+
+  useEffect(() => {
+    if (!captiveConnecting) return;
+    setCaptiveCountdown(30);
+    const timer = setInterval(() => setCaptiveCountdown((c) => c > 0 ? c - 1 : 0), 1000);
+    return () => clearInterval(timer);
+  }, [captiveConnecting]);
 
   const handleCaptiveConnect = async () => {
     if (!captiveMac || captiveConnecting) return;
@@ -308,7 +316,7 @@ export default function HomePage() {
                   <span className="voucher-pending-spinner" aria-hidden="true" />
                   <div>
                     <strong>Liberando acesso à rede…</strong>
-                    <span>Aguarde alguns segundos.</span>
+                    <span>{captiveCountdown > 0 ? `Aguarde… ${captiveCountdown}s` : "Quase lá…"}</span>
                   </div>
                 </div>
               )}
