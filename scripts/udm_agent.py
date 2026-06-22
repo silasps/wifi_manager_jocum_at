@@ -103,6 +103,15 @@ WALLED_GARDEN_DOMAINS = [
     "web.app",
     "app.flutterflow.io",
     "api.flutterflow.io",
+    # Captive portal detection (Android/iOS/Windows)
+    "connectivitycheck.gstatic.com",
+    "connectivitycheck.android.com",
+    "clients3.google.com",
+    "captive.apple.com",
+    "www.apple.com",
+    "detectportal.firefox.com",
+    "msftconnecttest.com",
+    "www.msftconnecttest.com",
     # Outros
     "page.link",
     "app.goo.gl",
