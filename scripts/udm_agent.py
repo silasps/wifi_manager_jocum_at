@@ -470,17 +470,39 @@ def buscar_unifi_client_id_por_mac(mac):
 
 
 def autorizar_mac_unifi(mac, minutos):
-    """
-    Autoriza cliente guest pela API Key nova, sem login/senha e sem 2FA.
-    """
-    site_id, client_id, mac_norm = buscar_unifi_client_id_por_mac(mac)
+    mac_norm = _normalizar_mac(mac).lower()
+    # Tenta via API de integração primeiro
+    try:
+        site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
+        payload = {
+            "action": "AUTHORIZE_GUEST_ACCESS",
+            "timeLimitMinutes": int(minutos),
+        }
+        return unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+    except Exception as e:
+        log(f"⚠️ API de integração falhou ({e}), autorizando via MongoDB...")
 
-    payload = {
-        "action": "AUTHORIZE_GUEST_ACCESS",
-        "timeLimitMinutes": int(minutos),
-    }
+    # Fallback: inserir direto no MongoDB (funciona mesmo quando API rejeita "not-guest")
+    agora = int(time.time())
+    fim = agora + int(minutos) * 60
+    site_id_mongo = obter_unifi_site_id_mongo()
+    result = subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong({agora}), "end": NumberLong({fim}), "site_id": "{site_id_mongo}"}}}}, {{"upsert": true}})'],
+        capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        raise Exception(f"MongoDB falhou: {result.stderr}")
+    log(f"✅ Autorizado via MongoDB: {mac_norm} até {datetime.datetime.fromtimestamp(fim)}")
 
-    return unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+
+def obter_unifi_site_id_mongo():
+    result = subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         'db.site.findOne({})._id.str'],
+        capture_output=True, text=True, timeout=5
+    )
+    return result.stdout.strip()
 
 
 def processar_autorizacoes():
