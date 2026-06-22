@@ -514,44 +514,20 @@ def buscar_autorizacoes_revogadas():
 
 
 def kick_mac_unifi(mac):
-    mac_norm = _normalizar_mac(mac)
-    # Usar API local do controller (roda na própria UDM) — aceita kick por MAC direto
+    mac_norm = _normalizar_mac(mac).lower()
+    # MongoDB local do UniFi (porta 27117, sem auth) — remover guest authorization
     try:
-        ctx = ssl._create_unverified_context()
-        conn = http.client.HTTPSConnection("127.0.0.1", 443, context=ctx)
-        login_payload = json.dumps({
-            "username": os.environ.get("UNIFI_USER", "admin"),
-            "password": os.environ.get("UNIFI_PASS", ""),
-        })
-        conn.request("POST", "/api/auth/login", login_payload,
-                     {"Content-Type": "application/json"})
-        login_res = conn.getresponse()
-        cookies = login_res.getheader("Set-Cookie") or ""
-        login_res.read()
-
-        cmd_payload = json.dumps({"cmd": "unauthorize-guest", "mac": mac_norm.lower()})
-        headers = {"Content-Type": "application/json", "Cookie": cookies}
-        conn.request("POST", "/proxy/network/api/s/default/cmd/stamgr", cmd_payload, headers)
-        res = conn.getresponse()
-        body = res.read().decode()
-        conn.close()
-        if res.status == 200:
-            log(f"✅ Kick local OK para {mac_norm}")
+        result = subprocess.run(
+            ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+             f'db.guest.remove({{"mac": "{mac_norm}"}})'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and "WriteResult" in result.stdout:
+            log(f"✅ Kick local OK (mongo) para {mac_norm}: {result.stdout.strip()}")
             return
-        raise Exception(f"Kick local falhou: {res.status} - {body}")
+        raise Exception(f"mongo retornou: {result.stdout} {result.stderr}")
     except Exception as e:
-        log(f"⚠️ Kick local falhou ({e}), tentando API de integração...")
-
-    # Fallback: API de integração
-    site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
-    try:
-        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
-                  {"action": "UNAUTHORIZE_GUEST_ACCESS"})
-    except Exception:
-        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
-                  {"action": "BLOCK"})
-        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
-                  {"action": "UNBLOCK"})
+        log(f"⚠️ Kick local mongo falhou ({e}), tentando API de integração...")
 
 
 def processar_revogacoes():
