@@ -232,7 +232,7 @@ export default function HomePage() {
       if (data.status === "autorizado") {
         deleteCookie("captive_mac");
         deleteCookie("captive_url");
-        window.location.href = captiveUrl;
+        window.location.href = "/hotspot/connected";
         return;
       }
 
@@ -246,7 +246,7 @@ export default function HomePage() {
               clearInterval(poll);
               deleteCookie("captive_mac");
               deleteCookie("captive_url");
-              window.location.href = captiveUrl;
+              window.location.href = "/hotspot/connected";
             } else if (pollData.status === "erro") {
               clearInterval(poll);
               setCaptiveConnecting(false);
