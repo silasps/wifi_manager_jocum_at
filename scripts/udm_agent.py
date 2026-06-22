@@ -524,20 +524,21 @@ def kick_mac_unifi(mac):
     subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING",
                     "-m", "mac", "--mac-source", mac_norm, "-j", "RETURN"],
                    capture_output=True)
-    # Expirar guest em vez de remover — mantém o registro para a API reconhecer como "guest"
+    # 1) Desautorizar via API de integração (atualiza firewall do UniFi)
     try:
-        agora = int(time.time())
-        result = subprocess.run(
-            ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
-             f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"end": NumberLong({agora - 1})}}}})'],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0 and "nModified" in result.stdout:
-            log(f"✅ Kick local OK (guest expirado) para {mac_norm}: {result.stdout.strip()}")
-            return
-        raise Exception(f"mongo retornou: {result.stdout} {result.stderr}")
+        site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
+        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
+                  {"action": "UNAUTHORIZE_GUEST_ACCESS"})
+        log(f"✅ Kick API OK (UNAUTHORIZE_GUEST_ACCESS) para {mac_norm}")
     except Exception as e:
-        log(f"⚠️ Kick local mongo falhou ({e}), tentando API de integração...")
+        log(f"⚠️ Kick API falhou ({e}), expirando via MongoDB...")
+    # 2) Expirar no MongoDB (mantém registro para re-autorização futura)
+    agora = int(time.time())
+    subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"end": NumberLong({agora - 1})}}}})'],
+        capture_output=True, text=True, timeout=5
+    )
 
 
 def processar_revogacoes():
