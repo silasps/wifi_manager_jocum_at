@@ -252,6 +252,36 @@ export default function HomePage() {
     setCopiedCode(code);
   };
 
+  const [revoking, setRevoking] = useState(false);
+
+  const handleRevokeAccess = async () => {
+    if (!confirm("Deseja revogar seu acesso? O portal cativo vai reaparecer e você precisará se reconectar.")) return;
+    setRevoking(true);
+    setMessage("Revogando acesso…");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setRevoking(false); setMessage("Erro: não logado."); return; }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setRevoking(false); setMessage("Erro: sessão expirada."); return; }
+
+    try {
+      const res = await fetch("/api/hotspot/revoke-my-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        setMessage("Acesso revogado. O portal vai reaparecer em instantes.");
+        setTimeout(() => { window.location.reload(); }, 3000);
+      } else {
+        const data = await res.json();
+        setMessage(data.error ?? "Erro ao revogar acesso.");
+      }
+    } catch {
+      setMessage("Erro de rede.");
+    }
+    setRevoking(false);
+  };
+
   const signOut = async () => {
     setMessage("Saindo do sistema.");
     await supabase.auth.signOut();
@@ -406,6 +436,20 @@ export default function HomePage() {
                   <span><span className="voucher-status-dot red" aria-hidden="true" />Vencido</span>
                 </div>
               </section>
+
+              <button
+                type="button"
+                onClick={() => void handleRevokeAccess()}
+                disabled={revoking}
+                style={{
+                  background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)",
+                  borderRadius: 10, padding: "10px 16px", color: "#fca5a5",
+                  fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", width: "100%",
+                  opacity: revoking ? 0.5 : 1,
+                }}
+              >
+                {revoking ? "Revogando…" : "Desconectar da rede"}
+              </button>
 
               {message && <p className="status-message">{message}</p>}
             </>
