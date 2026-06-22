@@ -4,9 +4,15 @@ import { useEffect } from "react";
 
 export default function ConnectedPage() {
   useEffect(() => {
-    // Após 3s, redireciona para a URL de detecção do sistema — isso fecha o popup automaticamente
     const timer = setTimeout(() => {
-      window.location.href = "http://captive.apple.com/hotspot-detect.html";
+      const ua = navigator.userAgent.toLowerCase();
+      if (ua.includes("android")) {
+        window.location.href = "http://connectivitycheck.gstatic.com/generate_204";
+      } else if (ua.includes("iphone") || ua.includes("ipad") || ua.includes("mac")) {
+        window.location.href = "http://captive.apple.com/hotspot-detect.html";
+      } else {
+        window.location.href = "http://www.msftconnecttest.com/connecttest.txt";
+      }
     }, 3000);
     return () => clearTimeout(timer);
   }, []);
