@@ -424,7 +424,8 @@ def obter_unifi_site_id():
     if not sites:
         raise Exception("A UniFi API não retornou nenhum site")
 
-    # A documentação diz que em Cloud Gateway normalmente vem um único site.
+    if isinstance(sites, dict) and "data" in sites:
+        sites = sites["data"]
     site = sites[0] if isinstance(sites, list) else sites
     site_id = site.get("id") or site.get("siteId")
     if not site_id:
