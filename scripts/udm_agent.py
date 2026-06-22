@@ -482,7 +482,7 @@ def autorizar_mac_unifi(mac, minutos):
     except Exception as e:
         log(f"⚠️ API de integração falhou ({e}), autorizando via MongoDB...")
 
-    # Fallback: inserir direto no MongoDB (funciona mesmo quando API rejeita "not-guest")
+    # Fallback: inserir no MongoDB + liberar MAC no firewall
     agora = int(time.time())
     fim = agora + int(minutos) * 60
     site_id_mongo = obter_unifi_site_id_mongo()
@@ -493,7 +493,11 @@ def autorizar_mac_unifi(mac, minutos):
     )
     if result.returncode != 0:
         raise Exception(f"MongoDB falhou: {result.stderr}")
-    log(f"✅ Autorizado via MongoDB: {mac_norm} até {datetime.datetime.fromtimestamp(fim)}")
+    # Liberar MAC no firewall para bypass do captive portal
+    subprocess.run(["iptables", "-t", "nat", "-I", "PREROUTING", "1",
+                    "-m", "mac", "--mac-source", mac_norm, "-j", "RETURN"],
+                   capture_output=True)
+    log(f"✅ Autorizado via MongoDB + iptables: {mac_norm} até {datetime.datetime.fromtimestamp(fim)}")
 
 
 def obter_unifi_site_id_mongo():
@@ -546,6 +550,10 @@ def buscar_autorizacoes_revogadas():
 
 def kick_mac_unifi(mac):
     mac_norm = _normalizar_mac(mac).lower()
+    # Remover regra iptables de bypass (se existir)
+    subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING",
+                    "-m", "mac", "--mac-source", mac_norm, "-j", "RETURN"],
+                   capture_output=True)
     # MongoDB local do UniFi (porta 27117, sem auth) — remover guest authorization
     try:
         result = subprocess.run(
@@ -554,7 +562,7 @@ def kick_mac_unifi(mac):
             capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0 and "WriteResult" in result.stdout:
-            log(f"✅ Kick local OK (mongo) para {mac_norm}: {result.stdout.strip()}")
+            log(f"✅ Kick local OK (mongo + iptables) para {mac_norm}: {result.stdout.strip()}")
             return
         raise Exception(f"mongo retornou: {result.stdout} {result.stderr}")
     except Exception as e:
