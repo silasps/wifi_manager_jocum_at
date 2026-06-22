@@ -14,7 +14,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # CONFIGURAÇÕES
 # ===============================
 SUPABASE_URL = "xptkrsbjyyslbgurfvbg.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhwdGtyc2JqeXlzbGJndXJmdmJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk0MzM4OTksImV4cCI6MjA2NTAwOTg5OX0.C9DMTtaFJfczz5T1hMJmQaJ216-UQVf7IcgCN7EzmcA"
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 TABELA_VOUCHERS = "vouchers"
 COL_TEMPO = "tempo(min)"
 COL_QTD = "quota"
