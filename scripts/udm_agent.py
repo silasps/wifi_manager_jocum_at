@@ -742,16 +742,19 @@ def garantir_redirect_porta_80():
         log(f"✅ Redirect porta 80→{PORTAL_REDIRECT_PORT} aplicado")
 
 
-# Loop infinito para rodar a cada 20 segundos
+# Loop principal — autorizações/revogações a cada 5s, tarefas pesadas a cada 60s
 if __name__ == "__main__":
     threading.Thread(target=iniciar_servidor_redirect, daemon=True).start()
     time.sleep(2)
     garantir_redirect_porta_80()
     aplicar_walled_garden()
+    _ciclo = 0
     while True:
-        processar_vouchers()
         processar_autorizacoes()
         processar_revogacoes()
-        garantir_redirect_porta_80()
-        aplicar_walled_garden()
-        time.sleep(20)
+        if _ciclo % 12 == 0:
+            processar_vouchers()
+            garantir_redirect_porta_80()
+            aplicar_walled_garden()
+        _ciclo += 1
+        time.sleep(5)
