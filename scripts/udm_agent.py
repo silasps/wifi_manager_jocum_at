@@ -469,9 +469,26 @@ def buscar_unifi_client_id_por_mac(mac):
     return site_id, client_id, mac_norm
 
 
+def _garantir_guest_record(mac_norm):
+    """Cria guest expirado no MongoDB se não existir — necessário para API reconhecer como guest."""
+    check = subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         f'db.guest.find({{"mac": "{mac_norm}"}}).count()'],
+        capture_output=True, text=True, timeout=5
+    )
+    if check.returncode == 0 and check.stdout.strip() == "0":
+        subprocess.run(
+            ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+             f'db.guest.insert({{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong(1), "end": NumberLong(1), "site_id": "6834b054b243651f00c8dcc5"}})'],
+            capture_output=True, text=True, timeout=5
+        )
+        log(f"✅ Guest record criado para {mac_norm}")
+
+
 def autorizar_mac_unifi(mac, minutos):
     """Autoriza cliente guest pela API de integração com retry."""
     mac_norm = _normalizar_mac(mac).lower()
+    _garantir_guest_record(mac_norm)
     last_err = None
     for tentativa in range(3):
         try:
@@ -484,6 +501,8 @@ def autorizar_mac_unifi(mac, minutos):
         except Exception as e:
             last_err = e
             log(f"⚠️ Tentativa {tentativa+1}/3 falhou para {mac_norm}: {e}")
+            if "not-guest" in str(e) and tentativa == 0:
+                _garantir_guest_record(mac_norm)
             time.sleep(3)
     raise last_err
 
