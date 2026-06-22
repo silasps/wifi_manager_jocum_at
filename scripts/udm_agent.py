@@ -703,25 +703,20 @@ def _aplicar_com_iptables(ips):
     _garantir_regra_no_topo(["-j", chain])
 
 
-def garantir_redirect_porta_80():
-    """Garante iptables NAT redirect 80→8881 para clientes guest."""
+def remover_redirect_porta_80():
+    """Remove regra NAT antiga que interfere com o portal nativo do UniFi."""
     regra = ["-i", GUEST_INTERFACE, "-p", "tcp", "--dport", "80",
              "-d", GUEST_GATEWAY_IP, "-j", "REDIRECT", "--to-port", str(PORTAL_REDIRECT_PORT)]
-    check = subprocess.run(["iptables", "-t", "nat", "-C", "PREROUTING"] + regra, capture_output=True)
-    if check.returncode != 0:
-        subprocess.run(["iptables", "-t", "nat", "-I", "PREROUTING", "1"] + regra, capture_output=True)
-        log(f"✅ Redirect porta 80→{PORTAL_REDIRECT_PORT} aplicado")
+    subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING"] + regra, capture_output=True)
 
 
 # Loop infinito para rodar a cada 20 segundos
 if __name__ == "__main__":
-    threading.Thread(target=iniciar_servidor_redirect, daemon=True).start()
-    garantir_redirect_porta_80()
+    remover_redirect_porta_80()
     aplicar_walled_garden()
     while True:
         processar_vouchers()
         processar_autorizacoes()
         processar_revogacoes()
-        garantir_redirect_porta_80()
         aplicar_walled_garden()
         time.sleep(20)
