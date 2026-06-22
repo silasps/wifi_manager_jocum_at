@@ -142,10 +142,27 @@ export default function HomePage() {
   useEffect(() => {
     const mac = getCookie("captive_mac");
     const url = getCookie("captive_url") ?? "http://www.google.com";
-    if (mac) {
-      setCaptiveMac(mac);
-      setCaptiveUrl(url);
-    }
+    if (!mac) return;
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("autorizacoes")
+        .select("id")
+        .eq("cliente_id", user.id)
+        .eq("mac_address", mac.toLowerCase())
+        .eq("status", "autorizado")
+        .limit(1);
+
+      if (data && data.length > 0) {
+        deleteCookie("captive_mac");
+        deleteCookie("captive_url");
+      } else {
+        setCaptiveMac(mac);
+        setCaptiveUrl(url);
+      }
+    })();
   }, []);
 
   useEffect(() => {
