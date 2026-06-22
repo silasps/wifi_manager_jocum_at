@@ -42,6 +42,71 @@ PORTAL_EXTERNO_URL = "https://wifi-manager-react.vercel.app"
 # Porta que a UDM usa para redirecionar clientes ao portal externo
 PORTAL_REDIRECT_PORT = 8881
 
+# ===============================
+# WALLED GARDEN (PRE-AUTH ACCESS)
+# ===============================
+# Domínios liberados para clientes guest ANTES da autenticação.
+# Replica o comportamento do walled garden nativo da UDM,
+# que deixa de funcionar quando se usa portal externo.
+WALLED_GARDEN_DOMAINS = [
+    # Portal & infra
+    "wifi-manager-react.vercel.app",
+    "vercel.app",
+    "vercel.com",
+    "assets.vercel.com",
+    "api.vercel.com",
+    "vercel-insights.com",
+    # Supabase (auth + banco)
+    "xptkrsbjyyslbgurfvbg.supabase.co",
+    "supabase.co",
+    "api.supabase.com",
+    "auth.supabase.com",
+    # Google / gstatic / reCAPTCHA
+    "ssl.gstatic.com",
+    "gstatic.com",
+    "www.gstatic.com",
+    "fonts.gstatic.com",
+    "www.google.com",
+    "googleusercontent.com",
+    "lh3.googleusercontent.com",
+    "fonts.googleapis.com",
+    "googleapis.com",
+    "www.googleapis.com",
+    "apis.google.com",
+    "accounts.google.com",
+    "clients6.google.com",
+    "oauth2.googleapis.com",
+    "content.googleapis.com",
+    "storage.googleapis.com",
+    "firestore.googleapis.com",
+    "firebase.googleapis.com",
+    "firebaseinstallations.googleapis.com",
+    "firebasestorage.googleapis.com",
+    "identitytoolkit.googleapis.com",
+    "securetoken.googleapis.com",
+    "cloudfunctions.net",
+    "recaptcha.net",
+    "www.recaptcha.net",
+    # Apple
+    "appleid.apple.com",
+    # Facebook
+    "facebook.com",
+    "graph.facebook.com",
+    # Firebase / FlutterFlow
+    "firebaseapp.com",
+    "jocum-at.flutterflow.app",
+    "jocum-at.web.app",
+    "flutterflow.app",
+    "web.app",
+    "app.flutterflow.io",
+    "api.flutterflow.io",
+    # Outros
+    "page.link",
+    "app.goo.gl",
+]
+WALLED_GARDEN_IPSET = "walled_garden"
+WALLED_GARDEN_REFRESH_SECONDS = 60  # re-resolve DNS a cada 1 min
+
 # Na UDM local normalmente funciona com o primeiro prefixo.
 # Mantive fallback para /v1 direto caso sua versão exponha assim.
 UNIFI_API_PREFIXES = [
@@ -489,10 +554,97 @@ def iniciar_servidor_redirect():
         log(f"❌ Não foi possível iniciar o servidor de redirecionamento: {e}")
 
 
+# ===============================
+# WALLED GARDEN VIA IPTABLES
+# ===============================
+import socket
+
+_walled_garden_last_run = 0
+
+def _resolver_dominios(dominios):
+    ips = set()
+    for dominio in dominios:
+        try:
+            for info in socket.getaddrinfo(dominio, None, socket.AF_INET):
+                ips.add(info[4][0])
+        except Exception:
+            pass
+    return ips
+
+def _ipset_disponivel():
+    try:
+        subprocess.run(["ipset", "version"], capture_output=True, timeout=5)
+        return True
+    except Exception:
+        return False
+
+def aplicar_walled_garden():
+    global _walled_garden_last_run
+    agora = time.time()
+    if agora - _walled_garden_last_run < WALLED_GARDEN_REFRESH_SECONDS:
+        return
+    _walled_garden_last_run = agora
+
+    ips = _resolver_dominios(WALLED_GARDEN_DOMAINS)
+    if not ips:
+        log("⚠️ Walled garden: nenhum IP resolvido")
+        return
+
+    try:
+        if _ipset_disponivel():
+            _aplicar_com_ipset(ips)
+        else:
+            _aplicar_com_iptables(ips)
+        log(f"✅ Walled garden: {len(ips)} IPs de {len(WALLED_GARDEN_DOMAINS)} domínios")
+    except Exception as e:
+        log(f"❌ Erro walled garden: {e}")
+
+def _garantir_regra_no_topo(regra_args):
+    """Remove a regra de qualquer posição e reinsere na posição 1 do FORWARD."""
+    subprocess.run(["iptables", "-D", "FORWARD"] + regra_args, capture_output=True)
+    subprocess.run(["iptables", "-I", "FORWARD", "1"] + regra_args, check=True)
+
+def _aplicar_com_ipset(ips):
+    nome = WALLED_GARDEN_IPSET
+    subprocess.run(["ipset", "create", nome, "hash:ip", "-exist"],
+                    capture_output=True, check=True)
+
+    nome_tmp = nome + "_tmp"
+    subprocess.run(["ipset", "create", nome_tmp, "hash:ip", "-exist"],
+                    capture_output=True, check=True)
+    subprocess.run(["ipset", "flush", nome_tmp], capture_output=True, check=True)
+
+    for ip in ips:
+        subprocess.run(["ipset", "add", nome_tmp, ip, "-exist"], capture_output=True)
+
+    subprocess.run(["ipset", "swap", nome_tmp, nome], capture_output=True, check=True)
+    subprocess.run(["ipset", "destroy", nome_tmp], capture_output=True)
+
+    regra = ["-m", "set", "--match-set", nome, "dst",
+             "-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"]
+    _garantir_regra_no_topo(regra)
+
+def _aplicar_com_iptables(ips):
+    chain = "WALLED_GARDEN"
+    subprocess.run(["iptables", "-N", chain], capture_output=True)
+    subprocess.run(["iptables", "-F", chain], capture_output=True, check=True)
+
+    for ip in ips:
+        subprocess.run(
+            ["iptables", "-A", chain, "-d", ip,
+             "-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"],
+            capture_output=True,
+        )
+
+    _garantir_regra_no_topo(["-j", chain])
+
+
 # Loop infinito para rodar a cada 20 segundos
 if __name__ == "__main__":
     threading.Thread(target=iniciar_servidor_redirect, daemon=True).start()
+    aplicar_walled_garden()
     while True:
         processar_vouchers()
         processar_autorizacoes()
+        aplicar_walled_garden()
         time.sleep(20)
