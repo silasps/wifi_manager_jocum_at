@@ -609,13 +609,20 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
         log(f"[redirect] {self.client_address[0]} → {args[0] if args else ''}")
 
 
+class ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+    allow_reuse_port = True
+
 def iniciar_servidor_redirect():
-    try:
-        servidor = HTTPServer(("0.0.0.0", PORTAL_REDIRECT_PORT), PortalRedirectHandler)
-        log(f"✅ Servidor de redirecionamento ativo na porta {PORTAL_REDIRECT_PORT}")
-        servidor.serve_forever()
-    except OSError as e:
-        log(f"❌ Não foi possível iniciar o servidor de redirecionamento: {e}")
+    for tentativa in range(5):
+        try:
+            servidor = ReusableHTTPServer(("0.0.0.0", PORTAL_REDIRECT_PORT), PortalRedirectHandler)
+            log(f"✅ Servidor de redirecionamento ativo na porta {PORTAL_REDIRECT_PORT}")
+            servidor.serve_forever()
+        except OSError as e:
+            log(f"⚠️ Porta {PORTAL_REDIRECT_PORT} ocupada (tentativa {tentativa+1}/5): {e}")
+            time.sleep(3)
+    log(f"❌ Não foi possível iniciar o servidor de redirecionamento após 5 tentativas")
 
 
 # ===============================
@@ -703,20 +710,26 @@ def _aplicar_com_iptables(ips):
     _garantir_regra_no_topo(["-j", chain])
 
 
-def remover_redirect_porta_80():
-    """Remove regra NAT antiga que interfere com o portal nativo do UniFi."""
+def garantir_redirect_porta_80():
+    """Garante iptables NAT redirect 80→8881 para clientes guest."""
     regra = ["-i", GUEST_INTERFACE, "-p", "tcp", "--dport", "80",
              "-d", GUEST_GATEWAY_IP, "-j", "REDIRECT", "--to-port", str(PORTAL_REDIRECT_PORT)]
-    subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING"] + regra, capture_output=True)
+    check = subprocess.run(["iptables", "-t", "nat", "-C", "PREROUTING"] + regra, capture_output=True)
+    if check.returncode != 0:
+        subprocess.run(["iptables", "-t", "nat", "-I", "PREROUTING", "1"] + regra, capture_output=True)
+        log(f"✅ Redirect porta 80→{PORTAL_REDIRECT_PORT} aplicado")
 
 
 # Loop infinito para rodar a cada 20 segundos
 if __name__ == "__main__":
-    remover_redirect_porta_80()
+    threading.Thread(target=iniciar_servidor_redirect, daemon=True).start()
+    time.sleep(2)
+    garantir_redirect_porta_80()
     aplicar_walled_garden()
     while True:
         processar_vouchers()
         processar_autorizacoes()
         processar_revogacoes()
+        garantir_redirect_porta_80()
         aplicar_walled_garden()
         time.sleep(20)
