@@ -485,26 +485,36 @@ def _garantir_guest_record(mac_norm):
         log(f"✅ Guest record criado para {mac_norm}")
 
 
+def _autorizar_via_mongo(mac_norm, minutos):
+    """Autoriza guest direto no MongoDB — funciona para MACs privados não visíveis na API."""
+    agora = int(time.time())
+    fim = agora + int(minutos) * 60
+    result = subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         f'db.guest.update({{"mac": "{mac_norm}"}}, {{"$set": {{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong({agora}), "end": NumberLong({fim}), "site_id": "6834b054b243651f00c8dcc5"}}}}, {{"upsert": true}})'],
+        capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        raise Exception(f"MongoDB falhou: {result.stderr}")
+    log(f"✅ Autorizado via MongoDB: {mac_norm} por {minutos} min")
+
+
 def autorizar_mac_unifi(mac, minutos):
-    """Autoriza cliente guest pela API de integração com retry."""
+    """Autoriza guest via API de integração, com fallback para MongoDB."""
     mac_norm = _normalizar_mac(mac).lower()
     _garantir_guest_record(mac_norm)
-    last_err = None
-    for tentativa in range(3):
-        try:
-            site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
-            payload = {
-                "action": "AUTHORIZE_GUEST_ACCESS",
-                "timeLimitMinutes": int(minutos),
-            }
-            return unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
-        except Exception as e:
-            last_err = e
-            log(f"⚠️ Tentativa {tentativa+1}/3 falhou para {mac_norm}: {e}")
-            if "not-guest" in str(e) and tentativa == 0:
-                _garantir_guest_record(mac_norm)
-            time.sleep(3)
-    raise last_err
+    # Tentar API de integração
+    try:
+        site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
+        payload = {
+            "action": "AUTHORIZE_GUEST_ACCESS",
+            "timeLimitMinutes": int(minutos),
+        }
+        return unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+    except Exception as e:
+        log(f"⚠️ API falhou ({e}), autorizando via MongoDB...")
+    # Fallback: MongoDB direto
+    _autorizar_via_mongo(mac_norm, minutos)
 
 
 def processar_autorizacoes():
