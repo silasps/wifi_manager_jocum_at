@@ -6,12 +6,23 @@ export default function ConnectedPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       const ua = navigator.userAgent.toLowerCase();
-      if (ua.includes("android")) {
-        window.location.href = "http://connectivitycheck.gstatic.com/generate_204";
-      } else if (ua.includes("iphone") || ua.includes("ipad") || ua.includes("mac")) {
-        window.location.href = "http://captive.apple.com/hotspot-detect.html";
+      const isCaptivePopup =
+        ua.includes("cna") || // macOS/iOS Captive Network Assistant
+        ua.includes("captivenetworksupport") ||
+        ua.includes("wispr") ||
+        (ua.includes("android") && ua.includes("http.agent")) ||
+        window.innerWidth < 500; // popups de captive portal são pequenos
+
+      if (isCaptivePopup) {
+        if (ua.includes("android")) {
+          window.location.href = "http://connectivitycheck.gstatic.com/generate_204";
+        } else if (ua.includes("iphone") || ua.includes("ipad") || ua.includes("mac")) {
+          window.location.href = "http://captive.apple.com/hotspot-detect.html";
+        } else {
+          window.location.href = "http://www.msftconnecttest.com/connecttest.txt";
+        }
       } else {
-        window.location.href = "http://www.msftconnecttest.com/connecttest.txt";
+        window.location.href = "https://www.google.com";
       }
     }, 3000);
     return () => clearTimeout(timer);
