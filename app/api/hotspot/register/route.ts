@@ -54,8 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Erro ao criar perfil" }, { status: 500 });
   }
 
-  // Plano gratuito: voucher ilimitado a 0,5 Mbps
-  // O agente Python reconhece "ilimitado" e define duration=0 + 500 Kbps no UniFi
+  // Plano gratuito: voucher ilimitado a 100 Kbps
   if (plano === "free") {
     await admin.from("vouchers").insert({
       cliente_id: userId,
@@ -63,6 +62,35 @@ export async function POST(request: Request) {
       tempo_desc: "ilimitado",
       quota: 6,
     });
+  }
+
+  // Migração automática: se o telefone já estava no free anônimo, revogar acesso antigo
+  const phoneNorm = whatsApp?.replace(/\D/g, "") ?? "";
+  if (phoneNorm.length >= 10) {
+    const phoneFull = phoneNorm.startsWith("55") ? `+${phoneNorm}` : `+55${phoneNorm}`;
+    const { data: freeVisitors } = await admin
+      .from("visitantes_free")
+      .select("id, mac_address")
+      .eq("telefone", phoneFull)
+      .eq("migrou_pago", false);
+
+    if (freeVisitors && freeVisitors.length > 0) {
+      const guestUserId = process.env.GUEST_USER_ID;
+      for (const visitor of freeVisitors) {
+        if (guestUserId) {
+          await admin
+            .from("autorizacoes")
+            .update({ status: "revogado" })
+            .eq("mac_address", visitor.mac_address)
+            .eq("cliente_id", guestUserId)
+            .in("status", ["autorizado", "pendente"]);
+        }
+        await admin
+          .from("visitantes_free")
+          .update({ migrou_pago: true })
+          .eq("id", visitor.id);
+      }
+    }
   }
 
   // Login imediato para retornar tokens de sessão

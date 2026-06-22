@@ -3908,44 +3908,47 @@ input:disabled {
 /* ── Escolha de plano (visitante) ── */
 .hsp-plan-choice {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .hsp-plan-option {
-  border: 1.5px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
   background: rgba(33, 33, 34, 0.9);
-  padding: 14px 12px;
+  padding: 18px 16px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .hsp-plan-premium {
-  border-color: rgba(255, 121, 42, 0.45);
+  border-color: rgba(255, 121, 42, 0.5);
   background: rgba(255, 121, 42, 0.06);
+  order: -1;
+  position: relative;
+  box-shadow: 0 4px 24px rgba(255, 121, 42, 0.12);
 }
 
 .hsp-plan-option-header {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .hsp-plan-badge {
   display: inline-block;
   width: fit-content;
   border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 0.65rem;
+  padding: 3px 10px;
+  font-size: 0.68rem;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .hsp-plan-badge-free {
-  background: rgba(255, 255, 255, 0.1);
-  color: #9d958e;
+  background: rgba(255, 255, 255, 0.08);
+  color: #746d67;
 }
 
 .hsp-plan-badge-premium {
@@ -3954,7 +3957,7 @@ input:disabled {
 }
 
 .hsp-plan-speed {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 950;
   color: #746d67;
   line-height: 1;
@@ -3962,11 +3965,12 @@ input:disabled {
 
 .hsp-plan-speed-premium {
   color: #fff7ef;
+  font-size: 1.5rem;
 }
 
 .hsp-plan-desc {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   color: #9d958e;
   line-height: 1.35;
 }
@@ -3975,22 +3979,98 @@ input:disabled {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: grid;
-  gap: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
 .hsp-plan-features li {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   color: #cfc8c1;
-  padding-left: 12px;
+  padding-left: 14px;
   position: relative;
 }
 
 .hsp-plan-features li::before {
-  content: "·";
+  content: "✓";
   position: absolute;
   left: 0;
+  font-size: 0.65rem;
+}
+
+.hsp-plan-free .hsp-plan-features li::before {
+  color: #746d67;
+}
+
+.hsp-plan-premium .hsp-plan-features li::before {
   color: #ff792a;
+}
+
+.hsp-plan-option .phone-row {
+  display: flex;
+  gap: 6px;
+}
+
+.hsp-plan-option .phone-row .ddi-select {
+  width: auto;
+  min-width: 88px;
+  font-size: 0.82rem;
+  padding: 8px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cfc8c1;
+}
+
+.hsp-plan-option .phone-row input {
+  flex: 1;
+  font-size: 0.9rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.hsp-plan-option .phone-row input::placeholder {
+  color: #746d67;
+}
+
+.hsp-plan-option .phone-row input:focus {
+  border-color: #ff792a;
+  outline: none;
+}
+
+.hsp-plan-divider {
+  text-align: center;
+  color: #5a534d;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  position: relative;
+}
+
+.hsp-plan-divider::before,
+.hsp-plan-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 30%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hsp-plan-divider::before { left: 0; }
+.hsp-plan-divider::after { right: 0; }
+
+@media (max-width: 380px) {
+  .hotspot-page { padding: 10px; gap: 10px; }
+  .hsp-plan-option { padding: 14px 12px; }
+  .hsp-plan-option .phone-row { flex-direction: column; }
+  .hsp-plan-option .phone-row .ddi-select { min-width: 100%; }
+  .hsp-plan-features { flex-direction: column; }
+  .hotspot-cta-primary { min-height: 48px !important; font-size: 0.88rem !important; }
+  .hotspot-cta-secondary { min-height: 42px; font-size: 0.84rem; }
 }
 
 /* ── Formulário de cadastro inline ── */

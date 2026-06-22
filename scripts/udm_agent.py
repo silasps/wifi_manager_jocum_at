@@ -23,7 +23,7 @@ COL_CODIGO = "codigo"
 LOG_FILE = "/data/scripts/voucher.log"
 QUOTA_KB = 30 * 1024
 VELOCIDADE_PAGO_KBPS = 50000   # 50 Mbps — planos pagos
-VELOCIDADE_FREE_KBPS = 500     # 0,5 Mbps — plano gratuito
+VELOCIDADE_FREE_KBPS = 256     # 256 Kbps — plano gratuito
 
 # ===============================
 # CONFIGURAÇÕES UNIFI - API KEY
@@ -494,6 +494,48 @@ def processar_autorizacoes():
         log(f"❌ Erro em processar_autorizacoes: {e}")
 
 # ===============================
+# REVOGAÇÃO DE AUTORIZAÇÕES
+# ===============================
+def buscar_autorizacoes_revogadas():
+    path = f"/rest/v1/autorizacoes?{urllib.parse.urlencode({'select': '*', 'status': 'eq.revogado'})}"
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context())
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    conn.request("GET", path, headers=headers)
+    res = conn.getresponse()
+    data = res.read().decode()
+    conn.close()
+    if res.status != 200:
+        raise Exception(f"Erro Supabase GET revogadas: {res.status} - {data}")
+    return json.loads(data)
+
+
+def kick_mac_unifi(mac):
+    site_id, client_id, mac_norm = buscar_unifi_client_id_por_mac(mac)
+    payload = {"action": "BLOCK"}
+    unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload)
+    payload_unblock = {"action": "UNBLOCK"}
+    unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions", payload_unblock)
+
+
+def processar_revogacoes():
+    try:
+        registros = buscar_autorizacoes_revogadas()
+        if not registros:
+            return
+        for reg in registros:
+            rid = reg["id"]
+            mac = reg["mac_address"]
+            try:
+                kick_mac_unifi(mac)
+                atualizar_autorizacao_status(rid, "kick_ok")
+                log(f"✅ MAC revogado/kick: {mac}")
+            except Exception as exc:
+                atualizar_autorizacao_status(rid, "kick_erro")
+                log(f"❌ Erro ao revogar MAC {mac}: {exc}")
+    except Exception as e:
+        log(f"❌ Erro em processar_revogacoes: {e}")
+
+# ===============================
 # SERVIDOR DE REDIRECIONAMENTO
 # ===============================
 def get_mac_from_ip(client_ip):
@@ -646,5 +688,6 @@ if __name__ == "__main__":
     while True:
         processar_vouchers()
         processar_autorizacoes()
+        processar_revogacoes()
         aplicar_walled_garden()
         time.sleep(20)
