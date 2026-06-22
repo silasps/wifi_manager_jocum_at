@@ -279,9 +279,11 @@ export default function HotspotPage() {
   useEffect(() => {
     if (state !== "success") return;
     if (countdown <= 0) {
-      document.cookie = "captive_mac=; Max-Age=0; Path=/; SameSite=Lax";
-      document.cookie = "captive_url=; Max-Age=0; Path=/; SameSite=Lax";
-      window.location.href = "https://www.google.com";
+      if (planoTipo !== "free") {
+        document.cookie = "captive_mac=; Max-Age=0; Path=/; SameSite=Lax";
+        document.cookie = "captive_url=; Max-Age=0; Path=/; SameSite=Lax";
+      }
+      window.location.href = "/hotspot/connected";
       return;
     }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
