@@ -828,6 +828,14 @@ export default function HotspotPage() {
         Já tem conta? Fazer login
       </button>
 
+      <p style={{
+        color: "#71717a", fontSize: "0.72rem", textAlign: "center",
+        margin: "16px 24px 0", lineHeight: 1.5,
+      }}>
+        O sinal Wi-Fi cobre as áreas comuns e externas da base.
+        O acesso dentro dos alojamentos não é garantido.
+      </p>
+
       <footer className="hotspot-footer">
         <span>JOCUM Almirante Tamandaré · Base de Missões</span>
         <a href="/termos-de-uso" className="hotspot-footer-link">Termos de Uso</a>
