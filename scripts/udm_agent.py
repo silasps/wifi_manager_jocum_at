@@ -470,19 +470,13 @@ def buscar_unifi_client_id_por_mac(mac):
 
 
 def _garantir_guest_record(mac_norm):
-    """Cria guest expirado no MongoDB se não existir — necessário para API reconhecer como guest."""
-    check = subprocess.run(
+    """Garante exatamente 1 guest record no MongoDB — remove duplicados e cria se necessário."""
+    # Remover duplicados e garantir apenas 1 registro
+    subprocess.run(
         ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
-         f'db.guest.find({{"mac": "{mac_norm}"}}).count()'],
+         f'var c = db.guest.find({{"mac": "{mac_norm}"}}).count(); if (c > 1) {{ db.guest.remove({{"mac": "{mac_norm}"}}); db.guest.insert({{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong(1), "end": NumberLong(1), "site_id": "6834b054b243651f00c8dcc5"}}); print("dedup"); }} else if (c == 0) {{ db.guest.insert({{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong(1), "end": NumberLong(1), "site_id": "6834b054b243651f00c8dcc5"}}); print("created"); }}'],
         capture_output=True, text=True, timeout=5
     )
-    if check.returncode == 0 and check.stdout.strip() == "0":
-        subprocess.run(
-            ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
-             f'db.guest.insert({{"mac": "{mac_norm}", "authorized_by": "api", "start": NumberLong(1), "end": NumberLong(1), "site_id": "6834b054b243651f00c8dcc5"}})'],
-            capture_output=True, text=True, timeout=5
-        )
-        log(f"✅ Guest record criado para {mac_norm}")
 
 
 GUEST_USER_ID = os.environ.get("GUEST_USER_ID", "5b0e3ee1-a588-460e-8572-2c658f52fde2")
