@@ -739,28 +739,51 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
           </div>
 
           <div className="admin-papel-editor">
-            <label htmlFor="cortesia-check" className="admin-papel-label">
-              Acesso de cortesia
-            </label>
-            <div className="admin-papel-row">
-              <label className="admin-checkbox-label">
-                <input
-                  id="cortesia-check"
-                  type="checkbox"
-                  checked={cortesiaEdit}
-                  onChange={(e) => setCortesiaEdit(e.target.checked)}
-                />
-                <span>Conta pode gerar voucher premium sem pagamento</span>
-              </label>
+            <label className="admin-papel-label">Tipo de acesso</label>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <button
+                type="button"
+                onClick={() => setCortesiaEdit(false)}
+                style={{
+                  flex: 1, padding: "10px 0", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,
+                  cursor: "pointer", border: "1px solid",
+                  ...(!cortesiaEdit
+                    ? { background: "rgba(74,222,128,0.12)", borderColor: "#4ade80", color: "#4ade80" }
+                    : { background: "transparent", borderColor: "rgba(255,255,255,0.15)", color: "#71717a" }),
+                }}
+              >
+                Pagante
+              </button>
+              <button
+                type="button"
+                onClick={() => setCortesiaEdit(true)}
+                style={{
+                  flex: 1, padding: "10px 0", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,
+                  cursor: "pointer", border: "1px solid",
+                  ...(cortesiaEdit
+                    ? { background: "rgba(251,191,36,0.12)", borderColor: "#fbbf24", color: "#fbbf24" }
+                    : { background: "transparent", borderColor: "rgba(255,255,255,0.15)", color: "#71717a" }),
+                }}
+              >
+                Cortesia
+              </button>
+            </div>
+            <p style={{ color: "#71717a", fontSize: "0.72rem", margin: "0 0 10px", lineHeight: 1.4 }}>
+              {cortesiaEdit
+                ? "Acesso premium gratuito — pode gerar voucher sem pagamento."
+                : "Acesso mediante pagamento de plano."}
+            </p>
+            {cortesiaEdit !== isCortesia && (
               <button
                 className="admin-save-button"
                 type="button"
                 onClick={saveCortesia}
-                disabled={saving || cortesiaEdit === isCortesia}
+                disabled={saving}
+                style={{ width: "100%" }}
               >
-                {saving ? "Salvando…" : "Salvar"}
+                {saving ? "Salvando…" : `Alterar para ${cortesiaEdit ? "cortesia" : "pagante"}`}
               </button>
-            </div>
+            )}
           </div>
 
           <button
