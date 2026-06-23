@@ -375,8 +375,30 @@ export default function HomePage() {
                 <div className="captive-banner" role="status" style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)" }}>
                   <div className="captive-banner-text">
                     <strong>Ativar acesso premium</strong>
-                    <span>Esqueça a rede Wi-Fi, reconecte e escolha &quot;Conectar&quot; quando o portal aparecer.</span>
+                    <span>Desconecte do free, esqueça a rede e reconecte.</span>
                   </div>
+                  <button
+                    className="captive-banner-btn"
+                    type="button"
+                    disabled={revoking}
+                    onClick={async () => {
+                      setRevoking(true);
+                      const { data: { session } } = await supabase.auth.getSession();
+                      if (!session) { setRevoking(false); return; }
+                      const res = await fetch("/api/hotspot/revoke-free-access", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                      });
+                      if (res.ok) {
+                        setRevokeDone(true);
+                        setShowUpgradeBanner(false);
+                        setMessage("Free desconectado! Esqueça a rede Wi-Fi e reconecte para ativar o premium.");
+                      }
+                      setRevoking(false);
+                    }}
+                  >
+                    {revoking ? "…" : "Desconectar"}
+                  </button>
                 </div>
               )}
 
