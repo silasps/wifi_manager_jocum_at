@@ -264,30 +264,31 @@ def processar_vouchers():
         else:
             for reg in registros:
                 tempo_desc = reg.get("tempo_desc", "")
-                is_free = tempo_desc.lower() == "ilimitado"
-                if is_free:
+                is_ilimitado = tempo_desc.lower() == "ilimitado"
+                if is_ilimitado:
                     tempo = 0  # duration=0 no UniFi = sem expiração
                 else:
                     tempo_minutos = converter_tempo_para_minutos(tempo_desc)
                     tempo = tempo_minutos if tempo_minutos > 0 else 60
                 cliente_uid = reg.get("cliente_id", "")
+                is_free = is_ilimitado and cliente_uid == GUEST_USER_ID
                 nome_formatado = buscar_cliente_nome_formatado(cliente_uid)
                 quota = reg.get(COL_QTD, QUOTA_KB)
                 velocidade_kbps = VELOCIDADE_FREE_KBPS if is_free else VELOCIDADE_PAGO_KBPS
-                log(f"Criando voucher para {nome_formatado} | {'ilimitado' if is_free else f'{tempo} min'} | {velocidade_kbps} Kbps...")
+                log(f"Criando voucher para {nome_formatado} | {'ilimitado' if is_ilimitado else f'{tempo} min'} | {velocidade_kbps} Kbps | {'free' if is_free else 'premium'}...")
                 cmd = gerar_codigo_formatado(tempo, quota, nome_formatado, velocidade_kbps)
                 result = subprocess.check_output(cmd, shell=True).decode().strip()
                 codigo = result if result else None
                 if not codigo:
                     log("❌ Não foi possível capturar o código do voucher.")
                     continue
-                if is_free:
+                if is_ilimitado:
                     data_expiracao = None  # sem expiração
                 else:
                     exp_time = datetime.datetime.now() + datetime.timedelta(minutes=tempo)
                     data_expiracao = exp_time.strftime("%Y-%m-%d %H:%M:%S")
                 atualizar_voucher_supabase(reg["id"], codigo, data_expiracao, quota)
-                log(f"✅ Voucher criado: {codigo} | {'Sem expiração' if is_free else f'Expira em: {data_expiracao}'}")
+                log(f"✅ Voucher criado: {codigo} | {'Sem expiração' if is_ilimitado else f'Expira em: {data_expiracao}'}")
     except Exception as e:
         log(f"❌ Erro: {e}")
 
