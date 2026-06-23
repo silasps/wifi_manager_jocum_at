@@ -489,35 +489,7 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {revokeDone ? (
-                <div style={{
-                  background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.25)",
-                  borderRadius: 10, padding: "14px 16px", textAlign: "center", width: "100%",
-                }}>
-                  <p style={{ color: "#4ade80", fontWeight: 600, fontSize: "0.85rem", margin: "0 0 6px" }}>
-                    Acesso revogado com sucesso!
-                  </p>
-                  <p style={{ color: "#a1a1aa", fontSize: "0.78rem", margin: 0 }}>
-                    Agora vá nas configurações do Wi-Fi, esqueça a rede e reconecte. O portal vai reaparecer.
-                  </p>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleRevokeAccess()}
-                  disabled={revoking}
-                  style={{
-                    background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)",
-                    borderRadius: 10, padding: "10px 16px", color: "#fca5a5",
-                    fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", width: "100%",
-                    opacity: revoking ? 0.5 : 1,
-                  }}
-                >
-                  {revoking ? "Revogando…" : "Desconectar da rede"}
-                </button>
-              )}
-
-              {message && !revokeDone && <p className="status-message">{message}</p>}
+              {message && <p className="status-message">{message}</p>}
             </>
           )}
         </div>
