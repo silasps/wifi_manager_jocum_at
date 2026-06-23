@@ -371,11 +371,11 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {showUpgradeBanner && !captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && (
+              {showUpgradeBanner && !captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && !revokeDone && (
                 <div className="captive-banner" role="status" style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)" }}>
                   <div className="captive-banner-text">
-                    <strong>Ativar acesso premium</strong>
-                    <span>Desconecte do free, esqueça a rede e reconecte.</span>
+                    <strong>Migrar para o premium</strong>
+                    <span>Clique abaixo para revogar o acesso free.</span>
                   </div>
                   <button
                     className="captive-banner-btn"
@@ -392,13 +392,29 @@ export default function HomePage() {
                       if (res.ok) {
                         setRevokeDone(true);
                         setShowUpgradeBanner(false);
-                        setMessage("Free desconectado! Esqueça a rede Wi-Fi e reconecte para ativar o premium.");
                       }
                       setRevoking(false);
                     }}
                   >
-                    {revoking ? "…" : "Desconectar"}
+                    {revoking ? "Revogando…" : "Revogar free"}
                   </button>
+                </div>
+              )}
+
+              {revokeDone && !captiveMac && (
+                <div style={{
+                  background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.25)",
+                  borderRadius: 10, padding: "14px 16px", width: "100%",
+                }}>
+                  <p style={{ color: "#4ade80", fontWeight: 600, fontSize: "0.85rem", margin: "0 0 8px" }}>
+                    Acesso free revogado!
+                  </p>
+                  <p style={{ color: "#a1a1aa", fontSize: "0.78rem", margin: 0, lineHeight: 1.5 }}>
+                    1. Vá em Ajustes → Wi-Fi<br/>
+                    2. Toque em &quot;.UofN JOCUM AT&quot; → Esquecer<br/>
+                    3. Reconecte na mesma rede<br/>
+                    4. No portal, clique &quot;Conectar&quot;
+                  </p>
                 </div>
               )}
 
