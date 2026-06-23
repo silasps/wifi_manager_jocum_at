@@ -136,6 +136,12 @@ function DonutChart({
   );
 }
 
+const inputStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: "0.85rem",
+  outline: "none", width: "100%",
+};
+
 export default function AdminPage() {
   const [query, setQuery] = useState("");
   const [clients, setClients] = useState<ClientRow[]>([]);
@@ -143,6 +149,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [chartFilter, setChartFilter] = useState<"ativo" | "vencendo" | "inativo" | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ nome: "", email: "", whatsApp: "", senha: "", tipo: "pagante" as "pagante" | "cortesia" });
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const tokenRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -207,6 +217,32 @@ export default function AdminPage() {
     debounceRef.current = setTimeout(() => void fetchClients(value), 350);
   };
 
+  const handleCreateClient = async () => {
+    const { nome, email, senha, whatsApp, tipo } = createForm;
+    if (!nome.trim() || !email.trim() || !senha) { setCreateMsg({ ok: false, text: "Preencha nome, email e senha." }); return; }
+    setCreating(true);
+    setCreateMsg(null);
+    try {
+      const res = await fetch("/api/admin/clients/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenRef.current}` },
+        body: JSON.stringify({ nome: nome.trim(), email: email.trim().toLowerCase(), senha, whatsApp: whatsApp.trim(), tipo }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCreateMsg({ ok: true, text: `Cliente criado com sucesso!` });
+        setCreateForm({ nome: "", email: "", whatsApp: "", senha: "", tipo: "pagante" });
+        void fetchClients(query);
+        if (tokenRef.current) void fetchStats(tokenRef.current);
+      } else {
+        setCreateMsg({ ok: false, text: data.error ?? "Erro ao criar cliente." });
+      }
+    } catch {
+      setCreateMsg({ ok: false, text: "Erro de rede." });
+    }
+    setCreating(false);
+  };
+
   const counts = stats?.counts ?? { ativos: 0, vencendo: 0, inativos: 0 };
 
   return (
@@ -230,7 +266,7 @@ export default function AdminPage() {
         <div className="skeleton skeleton-donut" />
       )}
 
-      <div className="admin-search-wrap">
+      <div className="admin-search-wrap" style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <input
           type="search"
           className="admin-search-input"
@@ -238,8 +274,126 @@ export default function AdminPage() {
           value={query}
           onChange={(e) => handleSearch(e.target.value)}
           autoFocus
+          style={{ flex: 1 }}
         />
+        <button
+          type="button"
+          onClick={() => { setShowCreateModal(true); setCreateMsg(null); }}
+          style={{
+            background: "#ef700b", border: "none", borderRadius: 10, padding: "10px 16px",
+            color: "#fff", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+          }}
+        >
+          + Novo cliente
+        </button>
       </div>
+
+      {showCreateModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20,
+        }} onClick={() => !creating && setShowCreateModal(false)}>
+          <div style={{
+            background: "#1a1a1a", borderRadius: 16, padding: "28px 24px", maxWidth: 420, width: "100%",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ color: "#fff", fontSize: "1.05rem", fontWeight: 700, margin: "0 0 18px" }}>
+              Novo cliente
+            </h2>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <input
+                type="text" placeholder="Nome completo" value={createForm.nome}
+                onChange={(e) => setCreateForm((f) => ({ ...f, nome: e.target.value }))}
+                style={inputStyle}
+              />
+              <input
+                type="email" placeholder="Email" value={createForm.email}
+                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                style={inputStyle}
+              />
+              <input
+                type="tel" placeholder="WhatsApp (opcional)" value={createForm.whatsApp}
+                onChange={(e) => setCreateForm((f) => ({ ...f, whatsApp: e.target.value }))}
+                style={inputStyle}
+              />
+              <input
+                type="text" placeholder="Senha de acesso" value={createForm.senha}
+                onChange={(e) => setCreateForm((f) => ({ ...f, senha: e.target.value }))}
+                style={inputStyle}
+              />
+
+              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setCreateForm((f) => ({ ...f, tipo: "pagante" }))}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,
+                    cursor: "pointer", border: "1px solid",
+                    ...(createForm.tipo === "pagante"
+                      ? { background: "rgba(74,222,128,0.12)", borderColor: "#4ade80", color: "#4ade80" }
+                      : { background: "transparent", borderColor: "rgba(255,255,255,0.15)", color: "#71717a" }),
+                  }}
+                >
+                  Pagante
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateForm((f) => ({ ...f, tipo: "cortesia" }))}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: 10, fontSize: "0.82rem", fontWeight: 600,
+                    cursor: "pointer", border: "1px solid",
+                    ...(createForm.tipo === "cortesia"
+                      ? { background: "rgba(251,191,36,0.12)", borderColor: "#fbbf24", color: "#fbbf24" }
+                      : { background: "transparent", borderColor: "rgba(255,255,255,0.15)", color: "#71717a" }),
+                  }}
+                >
+                  Cortesia
+                </button>
+              </div>
+
+              <p style={{ color: "#71717a", fontSize: "0.72rem", margin: "2px 0 0", lineHeight: 1.4 }}>
+                {createForm.tipo === "pagante"
+                  ? "O cliente terá acesso após ativar um voucher pago."
+                  : "O cliente receberá acesso gratuito com velocidade premium."}
+              </p>
+            </div>
+
+            {createMsg && (
+              <p style={{ color: createMsg.ok ? "#4ade80" : "#f87171", fontSize: "0.8rem", margin: "12px 0 0", textAlign: "center" }}>
+                {createMsg.text}
+              </p>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+              <button
+                type="button"
+                style={{
+                  flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)",
+                  background: "transparent", color: "#a1a1aa", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer",
+                }}
+                onClick={() => setShowCreateModal(false)}
+                disabled={creating}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                style={{
+                  flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
+                  background: "#ef700b", color: "#fff", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer",
+                  opacity: creating ? 0.5 : 1,
+                }}
+                disabled={creating}
+                onClick={() => void handleCreateClient()}
+              >
+                {creating ? "Criando…" : "Criar cliente"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {message && <p className="admin-message">{message}</p>}
 
