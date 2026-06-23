@@ -92,7 +92,6 @@ export default function HomePage() {
   const [captiveConnecting, setCaptiveConnecting] = useState(false);
   const [captiveError, setCaptiveError] = useState(false);
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
-  const [showFreeDisconnectModal, setShowFreeDisconnectModal] = useState(false);
   const [captiveCountdown, setCaptiveCountdown] = useState(30);
   const seenPendingIds = useRef<Set<string>>(new Set());
 
@@ -295,30 +294,23 @@ export default function HomePage() {
   const [revokeDone, setRevokeDone] = useState(false);
 
   const handleRevokeAccess = async () => {
-    if (!confirm("Deseja revogar seu acesso? O portal cativo vai reaparecer e você precisará se reconectar.")) return;
+    if (!confirm("Deseja desconectar da rede? O portal vai reaparecer e você precisará se reconectar.")) return;
     setRevoking(true);
     setRevokeDone(false);
-    setMessage("Revogando acesso…");
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setRevoking(false); setMessage("Erro: não logado."); return; }
-
+    setMessage("Desconectando…");
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setRevoking(false); setMessage("Erro: sessão expirada."); return; }
 
     try {
-      const res = await fetch("/api/hotspot/revoke-my-access", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-      });
-      if (res.ok) {
-        setRevoking(false);
-        setRevokeDone(true);
-        setMessage("Acesso revogado! Agora esqueça a rede Wi-Fi e reconecte — o portal vai reaparecer.");
-      } else {
-        const data = await res.json();
-        setMessage(data.error ?? "Erro ao revogar acesso.");
-        setRevoking(false);
-      }
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` };
+      await Promise.all([
+        fetch("/api/hotspot/revoke-my-access", { method: "POST", headers }),
+        fetch("/api/hotspot/revoke-free-access", { method: "POST", headers }),
+      ]);
+      setRevoking(false);
+      setRevokeDone(true);
+      setShowUpgradeBanner(false);
+      setMessage("Desconectado! Esqueça a rede Wi-Fi e reconecte.");
     } catch {
       setMessage("Erro de rede.");
       setRevoking(false);
@@ -378,100 +370,14 @@ export default function HomePage() {
                   role="button"
                   tabIndex={0}
                   style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)", cursor: "pointer" }}
-                  onClick={() => setShowFreeDisconnectModal(true)}
-                  onKeyDown={(e) => e.key === "Enter" && setShowFreeDisconnectModal(true)}
+                  onClick={() => void handleRevokeAccess()}
+                  onKeyDown={(e) => e.key === "Enter" && void handleRevokeAccess()}
                 >
                   <div className="captive-banner-text">
                     <strong>Está usando a internet free?</strong>
                     <span>Toque aqui para desconectar e ativar seu plano premium.</span>
                   </div>
                   <span style={{ color: "#fbbf24", fontSize: "1.2rem" }}>›</span>
-                </div>
-              )}
-
-              {showFreeDisconnectModal && (
-                <div style={{
-                  position: "fixed", inset: 0, zIndex: 9999,
-                  background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center",
-                  padding: 20,
-                }} onClick={() => !revoking && setShowFreeDisconnectModal(false)}>
-                  <div style={{
-                    background: "#1a1a1a", borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "100%",
-                    border: revokeDone ? "1px solid rgba(74,222,128,0.25)" : "1px solid rgba(255,255,255,0.08)",
-                    textAlign: "center",
-                  }} onClick={(e) => e.stopPropagation()}>
-
-                    {!revokeDone ? (<>
-                      <h2 style={{ color: "#fff", fontSize: "1.05rem", fontWeight: 700, margin: "0 0 14px" }}>
-                        Desconectar da internet free?
-                      </h2>
-                      <p style={{ color: "#a1a1aa", fontSize: "0.82rem", margin: "0 0 20px", lineHeight: 1.6 }}>
-                        Após desconectar, você precisará esquecer a rede Wi-Fi e reconectar para ativar seu plano premium.
-                      </p>
-                      <div style={{ display: "flex", gap: 10 }}>
-                        <button
-                          type="button"
-                          style={{
-                            flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)",
-                            background: "transparent", color: "#a1a1aa", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer",
-                          }}
-                          onClick={() => setShowFreeDisconnectModal(false)}
-                          disabled={revoking}
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          style={{
-                            flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
-                            background: "#ef700b", color: "#fff", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer",
-                            opacity: revoking ? 0.5 : 1,
-                          }}
-                          disabled={revoking}
-                          onClick={async () => {
-                            setRevoking(true);
-                            const { data: { session } } = await supabase.auth.getSession();
-                            if (!session) { setRevoking(false); return; }
-                            const res = await fetch("/api/hotspot/revoke-free-access", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-                            });
-                            if (res.ok) {
-                              setRevokeDone(true);
-                              setShowUpgradeBanner(false);
-                            }
-                            setRevoking(false);
-                          }}
-                        >
-                          {revoking ? "Desconectando…" : "Confirmar"}
-                        </button>
-                      </div>
-                    </>) : (<>
-                      <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>&#10003;</div>
-                      <h2 style={{ color: "#4ade80", fontSize: "1.05rem", fontWeight: 700, margin: "0 0 16px" }}>
-                        Desconectado com sucesso!
-                      </h2>
-                      <p style={{ color: "#a1a1aa", fontSize: "0.82rem", margin: "0 0 20px", lineHeight: 1.6, textAlign: "left" }}>
-                        Agora siga os passos abaixo:
-                      </p>
-                      <div style={{ textAlign: "left", color: "#d4d4d8", fontSize: "0.82rem", lineHeight: 1.8 }}>
-                        <p style={{ margin: "0 0 6px" }}><strong style={{ color: "#fbbf24" }}>1.</strong> Vá em <strong>Ajustes → Wi-Fi</strong></p>
-                        <p style={{ margin: "0 0 6px" }}><strong style={{ color: "#fbbf24" }}>2.</strong> Toque em <strong>.UofN JOCUM AT</strong> → Esquecer</p>
-                        <p style={{ margin: "0 0 6px" }}><strong style={{ color: "#fbbf24" }}>3.</strong> Reconecte na mesma rede</p>
-                        <p style={{ margin: 0 }}><strong style={{ color: "#fbbf24" }}>4.</strong> No portal, clique <strong>Conectar</strong></p>
-                      </div>
-                      <button
-                        type="button"
-                        style={{
-                          marginTop: 22, padding: "12px 0", width: "100%", borderRadius: 10, border: "none",
-                          background: "#ef700b", color: "#fff", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer",
-                        }}
-                        onClick={() => { setShowFreeDisconnectModal(false); setRevokeDone(false); }}
-                      >
-                        Entendi
-                      </button>
-                    </>)}
-                  </div>
                 </div>
               )}
 
