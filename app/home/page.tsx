@@ -373,18 +373,19 @@ export default function HomePage() {
               </section>
 
               {showUpgradeBanner && !captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && (
-                <div className="captive-banner" role="status" style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)" }}>
+                <div
+                  className="captive-banner"
+                  role="button"
+                  tabIndex={0}
+                  style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)", cursor: "pointer" }}
+                  onClick={() => setShowFreeDisconnectModal(true)}
+                  onKeyDown={(e) => e.key === "Enter" && setShowFreeDisconnectModal(true)}
+                >
                   <div className="captive-banner-text">
                     <strong>Está usando a internet free?</strong>
-                    <span>Desconecte, esqueça a rede e reconecte para ativar seu plano premium.</span>
+                    <span>Toque aqui para desconectar e ativar seu plano premium.</span>
                   </div>
-                  <button
-                    className="captive-banner-btn"
-                    type="button"
-                    onClick={() => setShowFreeDisconnectModal(true)}
-                  >
-                    Desconectar
-                  </button>
+                  <span style={{ color: "#fbbf24", fontSize: "1.2rem" }}>›</span>
                 </div>
               )}
 
