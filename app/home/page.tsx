@@ -371,11 +371,11 @@ export default function HomePage() {
                 </div>
               </section>
 
-              {showUpgradeBanner && !captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && !revokeDone && (
+              {showUpgradeBanner && !captiveMac && (voucherStatus === "Em dia" || voucherStatus === "2 dias") && (
                 <div className="captive-banner" role="status" style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)" }}>
                   <div className="captive-banner-text">
-                    <strong>Migrar para o premium</strong>
-                    <span>Clique abaixo para revogar o acesso free.</span>
+                    <strong>Está usando a internet free?</strong>
+                    <span>Desconecte, esqueça a rede e reconecte para ativar seu plano premium.</span>
                   </div>
                   <button
                     className="captive-banner-btn"
@@ -396,25 +396,45 @@ export default function HomePage() {
                       setRevoking(false);
                     }}
                   >
-                    {revoking ? "Revogando…" : "Revogar free"}
+                    {revoking ? "Desconectando…" : "Desconectar"}
                   </button>
                 </div>
               )}
 
               {revokeDone && !captiveMac && (
                 <div style={{
-                  background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.25)",
-                  borderRadius: 10, padding: "14px 16px", width: "100%",
+                  position: "fixed", inset: 0, zIndex: 9999,
+                  background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center",
+                  padding: 20,
                 }}>
-                  <p style={{ color: "#4ade80", fontWeight: 600, fontSize: "0.85rem", margin: "0 0 8px" }}>
-                    Acesso free revogado!
-                  </p>
-                  <p style={{ color: "#a1a1aa", fontSize: "0.78rem", margin: 0, lineHeight: 1.5 }}>
-                    1. Vá em Ajustes → Wi-Fi<br/>
-                    2. Toque em &quot;.UofN JOCUM AT&quot; → Esquecer<br/>
-                    3. Reconecte na mesma rede<br/>
-                    4. No portal, clique &quot;Conectar&quot;
-                  </p>
+                  <div style={{
+                    background: "#1a1a1a", borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "100%",
+                    border: "1px solid rgba(74,222,128,0.25)", textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>&#10003;</div>
+                    <h2 style={{ color: "#4ade80", fontSize: "1.05rem", fontWeight: 700, margin: "0 0 16px" }}>
+                      Desconectado com sucesso!
+                    </h2>
+                    <p style={{ color: "#a1a1aa", fontSize: "0.82rem", margin: "0 0 20px", lineHeight: 1.6, textAlign: "left" }}>
+                      Agora siga os passos abaixo:
+                    </p>
+                    <div style={{ textAlign: "left", color: "#d4d4d8", fontSize: "0.82rem", lineHeight: 1.8 }}>
+                      <p style={{ margin: "0 0 6px" }}><strong style={{ color: "#fbbf24" }}>1.</strong> Vá em <strong>Ajustes → Wi-Fi</strong></p>
+                      <p style={{ margin: "0 0 6px" }}><strong style={{ color: "#fbbf24" }}>2.</strong> Toque em <strong>.UofN JOCUM AT</strong> → Esquecer</p>
+                      <p style={{ margin: "0 0 6px" }}><strong style={{ color: "#fbbf24" }}>3.</strong> Reconecte na mesma rede</p>
+                      <p style={{ margin: 0 }}><strong style={{ color: "#fbbf24" }}>4.</strong> No portal, clique <strong>Conectar</strong></p>
+                    </div>
+                    <button
+                      type="button"
+                      style={{
+                        marginTop: 22, padding: "12px 0", width: "100%", borderRadius: 10, border: "none",
+                        background: "#ef700b", color: "#fff", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer",
+                      }}
+                      onClick={() => setRevokeDone(false)}
+                    >
+                      Entendi
+                    </button>
+                  </div>
                 </div>
               )}
 
