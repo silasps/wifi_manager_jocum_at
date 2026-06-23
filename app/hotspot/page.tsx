@@ -108,6 +108,7 @@ export default function HotspotPage() {
   const [freeDdi, setFreeDdi] = useState("+55");
   const [freeError, setFreeError] = useState<string | null>(null);
   const [freeLoading, setFreeLoading] = useState(false);
+  const [showFreeModal, setShowFreeModal] = useState(false);
 
   // Formulário de cadastro inline
   const [regNome, setRegNome] = useState("");
@@ -755,13 +756,73 @@ export default function HotspotPage() {
           <button
             type="button"
             className="hotspot-cta-secondary"
-            onClick={() => void handleFreeAccess()}
+            onClick={() => {
+              setFreeError(null);
+              const raw = freePhone.replace(/\D/g, "");
+              if (raw.length < 10) { setFreeError("Informe um número válido com DDD."); return; }
+              setShowFreeModal(true);
+            }}
             disabled={freeLoading}
           >
             {freeLoading ? "Conectando…" : "Conectar grátis"}
           </button>
         </article>
       </section>
+
+      {showFreeModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20,
+        }} onClick={() => setShowFreeModal(false)}>
+          <div style={{
+            background: "#1a1a1a", borderRadius: 16, padding: "28px 24px", maxWidth: 380, width: "100%",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ color: "#fff", fontSize: "1.1rem", fontWeight: 700, margin: "0 0 12px", textAlign: "center" }}>
+              Antes de continuar…
+            </h2>
+            <div style={{ color: "#a1a1aa", fontSize: "0.82rem", lineHeight: 1.6 }}>
+              <p style={{ margin: "0 0 10px" }}>
+                O acesso gratuito é <strong style={{ color: "#fbbf24" }}>bastante limitado</strong>. Você terá acesso apenas para:
+              </p>
+              <ul style={{ margin: "0 0 12px", paddingLeft: 18 }}>
+                <li>Mensagens de texto (WhatsApp, Telegram)</li>
+                <li>E-mail</li>
+                <li>Acessos bancários básicos</li>
+              </ul>
+              <p style={{ margin: "0 0 14px", color: "#ef4444", fontWeight: 500, fontSize: "0.8rem" }}>
+                Vídeos, redes sociais, chamadas de vídeo e streaming <strong>não vão funcionar</strong> nesta velocidade.
+              </p>
+              <p style={{ margin: 0, color: "#71717a", fontSize: "0.75rem", textAlign: "center" }}>
+                Para uma experiência completa, considere um plano premium.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+              <button
+                type="button"
+                style={{
+                  flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)",
+                  background: "transparent", color: "#a1a1aa", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer",
+                }}
+                onClick={() => setShowFreeModal(false)}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                style={{
+                  flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
+                  background: "#ef700b", color: "#fff", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer",
+                }}
+                onClick={() => { setShowFreeModal(false); void handleFreeAccess(); }}
+              >
+                Continuar mesmo assim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button type="button" className="link-button" style={{ marginTop: 4 }} onClick={() => { window.location.href = "/?tab=login&from=portal"; }}>
         Já tem conta? Fazer login

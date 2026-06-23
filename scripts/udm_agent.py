@@ -23,7 +23,7 @@ COL_CODIGO = "codigo"
 LOG_FILE = "/data/scripts/voucher.log"
 QUOTA_KB = 30 * 1024
 VELOCIDADE_PAGO_KBPS = 50000   # 50 Mbps — planos pagos
-VELOCIDADE_FREE_KBPS = 256     # 256 Kbps — plano gratuito
+VELOCIDADE_FREE_KBPS = 123     # 123 Kbps — plano gratuito
 
 # ===============================
 # CONFIGURAÇÕES UNIFI - API KEY
