@@ -46,6 +46,7 @@ export async function POST(request: Request) {
     whatsApp: whatsApp?.trim() ?? "",
     ativo: true,
     categoria: "Obreiro",
+    tipo_plano: tipo === "cortesia" ? "cortesia" : "pagante",
     senha,
     papel: "user",
     aceite_de_termo: true,
@@ -54,15 +55,6 @@ export async function POST(request: Request) {
   if (clientError) {
     await admin.auth.admin.deleteUser(userId);
     return NextResponse.json({ error: "Erro ao criar perfil: " + clientError.message }, { status: 500 });
-  }
-
-  if (tipo === "cortesia") {
-    await admin.from("vouchers").insert({
-      cliente_id: userId,
-      status: "pendente",
-      tempo_desc: "ilimitado",
-      quota: 6,
-    });
   }
 
   return NextResponse.json({ ok: true, userId });

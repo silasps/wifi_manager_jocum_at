@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const admin = createAdminClient();
   let query = admin
     .from("clientes")
-    .select("user_id, nome, email, categoria, papel, ativo, whatsApp")
+    .select("user_id, nome, email, categoria, papel, ativo, whatsApp, tipo_plano")
     .order("nome");
 
   if (q) {

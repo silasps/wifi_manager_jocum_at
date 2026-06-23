@@ -45,13 +45,19 @@ export async function PATCH(
   const user = await requireAdmin(request);
   if (!user) return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
 
-  const body = (await request.json()) as { papel?: string };
-  if (!body.papel) return NextResponse.json({ error: "Campo papel é obrigatório." }, { status: 400 });
+  const body = (await request.json()) as { papel?: string; tipo_plano?: string };
+  if (!body.papel && !body.tipo_plano) {
+    return NextResponse.json({ error: "Informe ao menos um campo para atualizar." }, { status: 400 });
+  }
+
+  const patch: { papel?: string; tipo_plano?: string } = {};
+  if (body.papel) patch.papel = body.papel;
+  if (body.tipo_plano) patch.tipo_plano = body.tipo_plano;
 
   const admin = createAdminClient();
   const { error } = await admin
     .from("clientes")
-    .update({ papel: body.papel })
+    .update(patch)
     .eq("user_id", params.id);
 
   if (error) return NextResponse.json({ error: "Erro ao atualizar papel." }, { status: 500 });

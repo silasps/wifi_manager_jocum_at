@@ -12,6 +12,7 @@ type ClientRow = {
   categoria?: string | null;
   papel?: string | null;
   ativo?: boolean | null;
+  tipo_plano?: string | null;
 };
 
 type LastVoucher = {
@@ -367,7 +368,7 @@ export default function AdminPage() {
               <p style={{ color: "#71717a", fontSize: "0.72rem", margin: "2px 0 0", lineHeight: 1.4 }}>
                 {createForm.tipo === "pagante"
                   ? "O cliente terá acesso após ativar um voucher pago."
-                  : "O cliente receberá acesso gratuito com velocidade premium."}
+                  : "A conta poderá receber voucher premium de cortesia pelo perfil do cliente."}
               </p>
             </div>
 
@@ -446,6 +447,7 @@ export default function AdminPage() {
                   </div>
                   <div className="admin-client-tags">
                     {c.categoria && <span className="admin-tag">{c.categoria}</span>}
+                    {c.tipo_plano === "cortesia" && <span className="admin-tag admin-tag--courtesy">Cortesia</span>}
                     {c.papel && c.papel !== "user" && (
                       <span className="admin-tag admin-tag--role">{c.papel}</span>
                     )}

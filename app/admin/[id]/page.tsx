@@ -269,6 +269,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [papelEdit, setPapelEdit] = useState("user");
+  const [cortesiaEdit, setCortesiaEdit] = useState(false);
   const [saving, setSaving] = useState(false);
   const [renewVoucher, setRenewVoucher] = useState<Voucher | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -360,6 +361,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
 
       setCliente(data.cliente);
       setPapelEdit(data.cliente.papel || "user");
+      setCortesiaEdit(data.cliente.tipo_plano === "cortesia");
       setVouchers(data.vouchers ?? []);
       setFinancas(data.financas ?? []);
       setLoading(false);
@@ -406,6 +408,31 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       setMessage("Papel atualizado com sucesso.");
     } else {
       setMessage(data.error || "Erro ao atualizar papel.");
+    }
+    setSaving(false);
+  };
+
+  const saveCortesia = async () => {
+    if (!tokenRef.current || !cliente) return;
+    setSaving(true);
+    setMessage(null);
+
+    const nextTipoPlano = cortesiaEdit ? "cortesia" : "pagante";
+    const res = await fetch(`/api/admin/clients/${params.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${tokenRef.current}`,
+      },
+      body: JSON.stringify({ tipo_plano: nextTipoPlano }),
+    });
+
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (data.ok) {
+      setCliente((prev) => prev ? { ...prev, tipo_plano: nextTipoPlano } : prev);
+      setMessage(cortesiaEdit ? "Conta marcada como cortesia." : "Conta marcada como pagante.");
+    } else {
+      setMessage(data.error || "Erro ao atualizar cortesia.");
     }
     setSaving(false);
   };
@@ -475,6 +502,11 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
 
   const openCreateVoucher = () => {
     setCreateError(null);
+    setMessage(null);
+    if (cliente?.tipo_plano === "cortesia") {
+      void doCreateVoucher("gratuito", 0);
+      return;
+    }
     const cat = (cliente?.categoria || "Obreiro") as Category;
     setCreateQuota(cat === "Casal" ? 12 : 6);
     setCreatePlanType("Mensal");
@@ -489,11 +521,17 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
 
   const doCreateVoucher = async (forma_pagamento: string, valor_pago: number): Promise<boolean> => {
     if (!tokenRef.current) return false;
+    const isCortesiaVoucher = forma_pagamento === "gratuito";
     setCreating(true);
     const res = await fetch(`/api/admin/clients/${params.id}/voucher`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenRef.current}` },
-      body: JSON.stringify({ tempo_desc: timeLabel(createPlanType, createAmount), quota: createQuota, forma_pagamento, valor_pago }),
+      body: JSON.stringify({
+        tempo_desc: isCortesiaVoucher ? "1 mês" : timeLabel(createPlanType, createAmount),
+        quota: isCortesiaVoucher ? 6 : createQuota,
+        forma_pagamento,
+        valor_pago,
+      }),
     });
     const data = (await res.json()) as { ok?: boolean; voucherId?: string; error?: string };
     setCreating(false);
@@ -505,12 +543,18 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       setCountdown(20);
       return true;
     }
-    setCreateError(data.error || "Erro ao criar voucher.");
+    const errorMessage = data.error || "Erro ao criar voucher.";
+    setCreateError(errorMessage);
+    if (!showCreateVoucher) setMessage(errorMessage);
     return false;
   };
 
   const handlePaymentSelect = async (method: "pix" | "card" | "cash" | "free") => {
     if (!createPlanType || !createAmount) { setCreateError("Selecione o plano e informe a duração."); return; }
+    if (method === "free" && cliente?.tipo_plano !== "cortesia") {
+      setCreateError("Marque esta conta como cortesia antes de gerar voucher gratuito.");
+      return;
+    }
     setCreateError(null);
     const valorNum = Number(createValor.replace(/\./g, "").replace(",", ".")) || 0;
     createValorNumRef.current = valorNum;
@@ -603,6 +647,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   }
 
   const isMinistry = cliente.categoria === "Ministério";
+  const isCortesia = cliente.tipo_plano === "cortesia";
   const wppUrl = userWhatsAppUrl(cliente, vouchers);
 
   return (
@@ -693,6 +738,31 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
             {message && <p className="admin-message">{message}</p>}
           </div>
 
+          <div className="admin-papel-editor">
+            <label htmlFor="cortesia-check" className="admin-papel-label">
+              Acesso de cortesia
+            </label>
+            <div className="admin-papel-row">
+              <label className="admin-checkbox-label">
+                <input
+                  id="cortesia-check"
+                  type="checkbox"
+                  checked={cortesiaEdit}
+                  onChange={(e) => setCortesiaEdit(e.target.checked)}
+                />
+                <span>Conta pode gerar voucher premium sem pagamento</span>
+              </label>
+              <button
+                className="admin-save-button"
+                type="button"
+                onClick={saveCortesia}
+                disabled={saving || cortesiaEdit === isCortesia}
+              >
+                {saving ? "Salvando…" : "Salvar"}
+              </button>
+            </div>
+          </div>
+
           <button
             className="admin-delete-button"
             type="button"
@@ -755,9 +825,10 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
                 className="admin-save-button"
                 type="button"
                 onClick={openCreateVoucher}
+                disabled={creating}
                 style={{ padding: "6px 14px", fontSize: "0.82rem" }}
               >
-                + Criar
+                {creating ? "Gerando…" : isCortesia ? "Gerar voucher" : "+ Criar"}
               </button>
             </div>
           </div>
@@ -1041,10 +1112,11 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
               <h3 className="admin-modal-title">Voucher gratuito</h3>
               <div className="admin-result-grid" style={{ width: "100%" }}>
                 <div className="admin-result-row"><span>Cliente</span><strong>{cliente?.nome || "—"}</strong></div>
-                <div className="admin-result-row"><span>Plano</span><strong>{timeLabel(createPlanType, createAmount)}</strong></div>
+                <div className="admin-result-row"><span>Plano</span><strong>1 mês</strong></div>
+                <div className="admin-result-row"><span>Dispositivos</span><strong>6</strong></div>
                 <div className="admin-result-row"><span>Valor</span><strong>R$ 0,00</strong></div>
               </div>
-              <p className="admin-modal-info admin-modal-info--warn" style={{ fontSize: "0.82rem" }}>Ao confirmar, o voucher será gerado sem cobrança.</p>
+              <p className="admin-modal-info admin-modal-info--warn" style={{ fontSize: "0.82rem" }}>Ao confirmar, o voucher premium será gerado sem cobrança para esta própria conta.</p>
               {createError && <p className="admin-modal-error">{createError}</p>}
               <button className="admin-modal-confirm" type="button" disabled={creating}
                 onClick={() => void doCreateVoucher("gratuito", 0)}>
@@ -1153,7 +1225,7 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
 
               <p className="admin-create-label" style={{ textAlign: "center" }}>Como o cliente vai pagar?</p>
               <div className="admin-payment-opts">
-                {([["pix","Pix"],["card","Cartão"],["cash","Dinheiro"],["free","Gratuito"]] as const).map(([m, label]) => (
+                {([["pix","Pix"],["card","Cartão"],["cash","Dinheiro"], ...(isCortesia ? [["free","Cortesia"] as const] : [])] as const).map(([m, label]) => (
                   <button key={m} type="button"
                     className="admin-payment-btn"
                     onClick={() => void handlePaymentSelect(m)}

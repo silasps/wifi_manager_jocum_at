@@ -17,6 +17,9 @@ const FORMA_LABEL: Record<string, string> = {
   gratuito: "Gratuito",
 };
 
+const CORTESIA_TEMPO_DESC = "1 mês";
+const CORTESIA_QUOTA = 6;
+
 export async function POST(
   request: Request,
   { params }: { params: { id: string } },
@@ -39,7 +42,7 @@ export async function POST(
 
   const { data: cliente, error: ce } = await admin
     .from("clientes")
-    .select("user_id")
+    .select("user_id, tipo_plano")
     .eq("user_id", params.id)
     .maybeSingle();
 
@@ -47,11 +50,20 @@ export async function POST(
     return NextResponse.json({ error: "Cliente não encontrado." }, { status: 404 });
   }
 
+  const isCortesia = String(cliente.tipo_plano || "").toLowerCase() === "cortesia";
+  if (forma_pagamento === "gratuito" && !isCortesia) {
+    return NextResponse.json({ error: "Voucher gratuito permitido apenas para contas marcadas como cortesia." }, { status: 403 });
+  }
+
+  const isVoucherCortesia = forma_pagamento === "gratuito";
+  const tempoFinal = isVoucherCortesia ? CORTESIA_TEMPO_DESC : tempo_desc.trim();
+  const quotaFinal = isVoucherCortesia ? CORTESIA_QUOTA : (quota || 6);
+
   const voucherInsert: Record<string, unknown> = {
     cliente_id: params.id,
     status: "pendente",
-    tempo_desc: tempo_desc.trim(),
-    quota: quota || 6,
+    tempo_desc: tempoFinal,
+    quota: quotaFinal,
   };
   if (qtdObreiros) voucherInsert.qtdObreiros = qtdObreiros;
 
@@ -70,7 +82,7 @@ export async function POST(
 
   await admin.from("financas").insert({
     cliente_id: params.id,
-    plano_escolhido: tempo_desc.trim(),
+    plano_escolhido: tempoFinal,
     comprovante_pgto: `admin:${formaLabel} | atendimento pessoal`,
     valor_pago: valorFinal,
   });
