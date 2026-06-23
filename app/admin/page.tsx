@@ -136,6 +136,13 @@ function DonutChart({
   );
 }
 
+function formatPhoneBR(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 3)} ${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
 const inputStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
   borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: "0.85rem",
@@ -313,11 +320,15 @@ export default function AdminPage() {
                 onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
                 style={inputStyle}
               />
-              <input
-                type="tel" placeholder="WhatsApp (opcional)" value={createForm.whatsApp}
-                onChange={(e) => setCreateForm((f) => ({ ...f, whatsApp: e.target.value }))}
-                style={inputStyle}
-              />
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ color: "#71717a", fontSize: "0.85rem", flexShrink: 0 }}>+55</span>
+                <input
+                  type="tel" placeholder="(67) 9 9632-0072" value={createForm.whatsApp}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, whatsApp: formatPhoneBR(e.target.value) }))}
+                  inputMode="numeric"
+                  style={inputStyle}
+                />
+              </div>
               <input
                 type="text" placeholder="Senha de acesso" value={createForm.senha}
                 onChange={(e) => setCreateForm((f) => ({ ...f, senha: e.target.value }))}
