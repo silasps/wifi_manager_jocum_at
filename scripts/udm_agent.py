@@ -9,6 +9,7 @@ import re
 import time
 import os
 import threading
+import random
 from http.server import HTTPServer, BaseHTTPRequestHandler
 # ===============================
 # CONFIGURAÇÕES
@@ -691,6 +692,138 @@ def _is_mac_authorized(mac_norm):
     return authorized
 
 
+# ===============================
+# DETECÇÃO DE TV E PIN
+# ===============================
+_TV_KEYWORDS = [
+    'smarttv', 'smart-tv', 'tizen', 'webos', 'web0s', 'netcast',
+    'roku', 'appletv', 'bravia', 'androidtv', 'chromecast', 'crkey',
+    'aftm', 'afts', 'aftt', 'aftb', 'aftmm',
+    'vizio', 'hbbtv', 'philipstv', 'nettv',
+    'playstation', 'xbox', 'nintendo', 'lg browser',
+]
+
+_tv_pin_cache = {}
+_TV_PIN_TTL = 600
+
+
+def _is_tv(user_agent):
+    if not user_agent:
+        return False
+    ua = user_agent.lower()
+    return any(kw in ua for kw in _TV_KEYWORDS)
+
+
+def _generate_tv_pin():
+    return str(random.randint(100000, 999999))
+
+
+def _store_tv_pin(pin, mac):
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+    }
+    ctx = ssl._create_unverified_context()
+    delete_path = f"/rest/v1/tv_pins?mac_address=eq.{urllib.parse.quote(mac)}"
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ctx)
+    conn.request("DELETE", delete_path, headers=headers)
+    conn.getresponse().read()
+    conn.close()
+
+    insert_path = "/rest/v1/tv_pins"
+    payload = json.dumps({"pin": pin, "mac_address": mac})
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ctx)
+    conn.request("POST", insert_path, body=payload, headers=headers)
+    conn.getresponse().read()
+    conn.close()
+
+
+def _get_or_create_tv_pin(mac_norm):
+    now = time.time()
+    cached = _tv_pin_cache.get(mac_norm)
+    if cached and now - cached[1] < _TV_PIN_TTL:
+        return cached[0]
+    pin = _generate_tv_pin()
+    _tv_pin_cache[mac_norm] = (pin, now)
+    try:
+        _store_tv_pin(pin, mac_norm)
+        log(f"📺 TV PIN gerado: {mac_norm} → {pin}")
+    except Exception as e:
+        log(f"⚠️ Erro ao salvar TV PIN: {e}")
+    return pin
+
+
+_TV_PIN_HTML = """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="5">
+<title>Conectar TV — JOCUM AT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:48px}
+.card{max-width:520px;text-align:center}
+.title{font-size:1.6rem;font-weight:700;margin-bottom:6px}
+.subtitle{font-size:0.95rem;color:#a1a1aa;margin-bottom:32px}
+.pin-label{font-size:0.9rem;color:#71717a;margin-bottom:10px}
+.pin{font-size:3.5rem;font-weight:800;letter-spacing:0.2em;color:#ef700b;margin-bottom:36px;font-family:'Courier New',monospace}
+.divider{border:none;border-top:1px solid rgba(255,255,255,0.08);margin-bottom:28px}
+.steps{text-align:left;margin:0 auto;max-width:440px}
+.step{display:flex;align-items:flex-start;gap:14px;margin-bottom:16px;font-size:1.05rem;color:#d4d4d8;line-height:1.4}
+.step-num{flex-shrink:0;width:28px;height:28px;border-radius:50%;background:#ef700b;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem}
+.step strong{color:#fff}
+.footer{margin-top:32px;color:#3f3f46;font-size:0.8rem}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid #3f3f46;border-top-color:#ef700b;border-radius:50%;animation:spin 1s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="card">
+<p class="title">Conectar TV ao Wi-Fi</p>
+<p class="subtitle">JOCUM Almirante Tamandaré</p>
+<p class="pin-label">Digite este código no celular:</p>
+<p class="pin">{{PIN}}</p>
+<hr class="divider">
+<div class="steps">
+<div class="step"><span class="step-num">1</span><span>No celular, conecte ao Wi-Fi <strong>.UofN JOCUM AT</strong></span></div>
+<div class="step"><span class="step-num">2</span><span>Acesse <strong>wifi-manager-react.vercel.app</strong> e faça login</span></div>
+<div class="step"><span class="step-num">3</span><span>Na tela inicial, toque em <strong>Conectar TV</strong></span></div>
+<div class="step"><span class="step-num">4</span><span>Digite o código acima e confirme</span></div>
+</div>
+<p class="footer"><span class="spinner"></span>Aguardando confirmação… não feche esta tela</p>
+</div>
+</body>
+</html>"""
+
+
+_TV_CONNECTED_HTML = """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TV Conectada — JOCUM AT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:48px}
+.card{max-width:480px;text-align:center}
+.check{width:72px;height:72px;border-radius:50%;border:3px solid #4ade80;color:#4ade80;display:flex;align-items:center;justify-content:center;font-size:2.2rem;margin:0 auto 24px}
+.title{font-size:1.8rem;font-weight:700;margin-bottom:8px}
+.subtitle{font-size:1.05rem;color:#a1a1aa;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="check">✓</div>
+<p class="title">TV Conectada!</p>
+<p class="subtitle">Pode fechar esta tela e usar seus apps normalmente.</p>
+</div>
+</body>
+</html>"""
+
+
 class PortalRedirectHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -705,11 +838,20 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
             if host:
                 original_url = f"http://{host}{self.path}"
 
+        user_agent = self.headers.get('User-Agent', '')
+
         # MAC autorizado → responder "internet ok" para captive portal detection
         if mac:
             mac_norm = _normalizar_mac(mac).lower()
             if _is_mac_authorized(mac_norm):
-                if '/generate_204' in self.path:
+                if _is_tv(user_agent):
+                    body = _TV_CONNECTED_HTML.encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif '/generate_204' in self.path:
                     self.send_response(204)
                     self.send_header("Content-Length", "0")
                     self.end_headers()
@@ -735,6 +877,19 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(body)
                 return
+
+        # TV não autorizada → página com PIN para o usuário autorizar pelo celular
+        if mac and _is_tv(user_agent):
+            mac_norm = _normalizar_mac(mac).lower()
+            pin = _get_or_create_tv_pin(mac_norm)
+            formatted_pin = f"{pin[:3]}  {pin[3:]}"
+            body = _TV_PIN_HTML.replace('{{PIN}}', formatted_pin).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
         query_params = {}
         if mac:

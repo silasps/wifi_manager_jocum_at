@@ -95,6 +95,12 @@ export default function HomePage() {
   const [captiveCountdown, setCaptiveCountdown] = useState(30);
   const seenPendingIds = useRef<Set<string>>(new Set());
 
+  const [tvModalOpen, setTvModalOpen] = useState(false);
+  const [tvPin, setTvPin] = useState("");
+  const [tvLoading, setTvLoading] = useState(false);
+  const [tvError, setTvError] = useState<string | null>(null);
+  const [tvSuccess, setTvSuccess] = useState(false);
+
   const currentVoucher = vouchers[0] ?? null;
   const voucherStatus = useMemo(() => getVoucherStatus(currentVoucher), [currentVoucher]);
   const ministryPeople = currentVoucher?.qtdObreiros ?? currentVoucher?.qtd_obreiros ?? 3;
@@ -317,6 +323,45 @@ export default function HomePage() {
     }
   };
 
+  const openTvModal = () => {
+    setTvPin("");
+    setTvError(null);
+    setTvSuccess(false);
+    setTvLoading(false);
+    setTvModalOpen(true);
+  };
+
+  const handleTvConnect = async () => {
+    const digits = tvPin.replace(/\D/g, "");
+    if (digits.length !== 6) { setTvError("Digite os 6 números que aparecem na TV."); return; }
+
+    setTvLoading(true);
+    setTvError(null);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setTvError("Sessão expirada. Faça login novamente."); setTvLoading(false); return; }
+
+    try {
+      const res = await fetch("/api/hotspot/tv-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ pin: digits }),
+      });
+      const data = await res.json() as { status?: string; auth_id?: string; error?: string };
+
+      if (!res.ok) { setTvError(data.error ?? "Erro ao conectar TV."); setTvLoading(false); return; }
+
+      if (data.status === "autorizado") { setTvSuccess(true); setTvLoading(false); return; }
+      if (data.status === "erro") { setTvError("Falha ao autorizar a TV. Tente novamente."); setTvLoading(false); return; }
+
+      setTvSuccess(true);
+      setTvLoading(false);
+    } catch {
+      setTvError("Erro de rede. Verifique sua conexão.");
+      setTvLoading(false);
+    }
+  };
+
   const signOut = async () => {
     setMessage("Saindo do sistema.");
     await supabase.auth.signOut();
@@ -441,6 +486,22 @@ export default function HomePage() {
                     {voucherStatus === "Vencido" ? "Pacote vencido" : "Pacote vencendo em breve"}
                   </span>
                   <span className="home-alert-chevron" aria-hidden="true">›</span>
+                </button>
+              )}
+
+              {(voucherStatus === "Em dia" || voucherStatus === "2 dias") && (
+                <button
+                  type="button"
+                  className="captive-banner"
+                  style={{ cursor: "pointer", border: "1px solid rgba(139,92,246,0.3)", background: "rgba(139,92,246,0.08)", width: "100%" }}
+                  onClick={openTvModal}
+                >
+                  <div style={{ fontSize: "1.6rem", flexShrink: 0 }}>&#128250;</div>
+                  <div className="captive-banner-text">
+                    <strong>Conectar TV</strong>
+                    <span>Vincule sua Smart TV ao seu plano de internet</span>
+                  </div>
+                  <span style={{ color: "#a78bfa", fontSize: "1.2rem" }}>&#8250;</span>
                 </button>
               )}
 
@@ -572,6 +633,78 @@ export default function HomePage() {
             <button className="home-renew-button" type="button" onClick={() => setActivatedVoucher(null)}>
               Entendido
             </button>
+          </div>
+        </div>
+      )}
+
+      {tvModalOpen && (
+        <div className="home-menu-backdrop" role="presentation" onClick={() => setTvModalOpen(false)}>
+          <div
+            className="voucher-activated-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tv-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 380 }}
+          >
+            {!tvSuccess ? (
+              <>
+                <div style={{ fontSize: "2.5rem", textAlign: "center", marginBottom: 8 }}>&#128250;</div>
+                <h2 id="tv-title" className="activated-title" style={{ fontSize: "1.15rem" }}>Conectar TV</h2>
+                <p className="activated-subtitle" style={{ fontSize: "0.82rem", marginBottom: 16 }}>
+                  Digite o código de 6 dígitos que aparece na tela da sua TV.
+                </p>
+
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={7}
+                  placeholder="000 000"
+                  value={tvPin}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    const formatted = digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits;
+                    setTvPin(formatted);
+                    setTvError(null);
+                  }}
+                  autoFocus
+                  style={{
+                    width: "100%", textAlign: "center", fontSize: "1.8rem", fontWeight: 800,
+                    letterSpacing: "0.15em", fontFamily: "'Courier New', monospace",
+                    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 12, padding: "14px 16px", color: "#fff", outline: "none",
+                    marginBottom: 12,
+                  }}
+                />
+
+                {tvError && (
+                  <p style={{ color: "#fca5a5", fontSize: "0.8rem", textAlign: "center", marginBottom: 8 }}>{tvError}</p>
+                )}
+
+                <button
+                  className="home-renew-button"
+                  type="button"
+                  onClick={() => void handleTvConnect()}
+                  disabled={tvLoading || tvPin.replace(/\D/g, "").length !== 6}
+                  style={{ opacity: tvLoading || tvPin.replace(/\D/g, "").length !== 6 ? 0.5 : 1 }}
+                >
+                  {tvLoading ? "Conectando TV…" : "Conectar TV"}
+                </button>
+
+                <button type="button" className="link-button" style={{ marginTop: 8 }} onClick={() => setTvModalOpen(false)}>
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="activated-check" aria-hidden="true">&#10003;</div>
+                <h2 className="activated-title">TV Conectada!</h2>
+                <p className="activated-subtitle">Sua TV já está com acesso à internet. Pode usar seus apps normalmente.</p>
+                <button className="home-renew-button" type="button" onClick={() => setTvModalOpen(false)} style={{ marginTop: 12 }}>
+                  Fechar
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
