@@ -103,15 +103,9 @@ WALLED_GARDEN_DOMAINS = [
     "web.app",
     "app.flutterflow.io",
     "api.flutterflow.io",
-    # Captive portal detection (Android/iOS/Windows)
-    "connectivitycheck.gstatic.com",
-    "connectivitycheck.android.com",
-    "clients3.google.com",
-    "captive.apple.com",
-    "www.apple.com",
-    "detectportal.firefox.com",
-    "msftconnecttest.com",
-    "www.msftconnecttest.com",
+    # NÃO incluir domínios de captive portal detection aqui!
+    # (connectivitycheck.gstatic.com, captive.apple.com, msftconnecttest.com, etc.)
+    # Eles precisam ser INTERCEPTADOS pelo redirect para o popup aparecer.
     # Outros
     "page.link",
     "app.goo.gl",
@@ -516,6 +510,43 @@ def _aplicar_qos_mongo(mac_norm, velocidade_kbps):
     )
 
 
+def _adicionar_bypass_mac(mac_norm):
+    """Bypass do redirect captive portal para MACs autorizados."""
+    regra = ["-m", "mac", "--mac-source", mac_norm, "-j", "RETURN"]
+    check = subprocess.run(["iptables", "-t", "nat", "-C", "PREROUTING"] + regra, capture_output=True)
+    if check.returncode != 0:
+        subprocess.run(["iptables", "-t", "nat", "-I", "PREROUTING", "1"] + regra, capture_output=True)
+        log(f"✅ Bypass redirect adicionado para {mac_norm}")
+
+
+def _limpar_bypass_expirados():
+    """Remove bypass rules de MACs cuja autorização expirou."""
+    result = subprocess.run(
+        ["iptables", "-t", "nat", "-S", "PREROUTING"],
+        capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        return
+    now = int(time.time())
+    for line in result.stdout.strip().split('\n'):
+        match = re.search(r'--mac-source\s+([0-9a-fA-F:]+)\s+-j\s+RETURN', line)
+        if not match:
+            continue
+        mac = match.group(1).lower()
+        check = subprocess.run(
+            ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+             f'db.guest.find({{"mac": "{mac}", "end": {{"$gt": NumberLong({now})}}}}).count()'],
+            capture_output=True, text=True, timeout=5
+        )
+        if check.returncode == 0 and check.stdout.strip() == "0":
+            subprocess.run(
+                ["iptables", "-t", "nat", "-D", "PREROUTING",
+                 "-m", "mac", "--mac-source", mac, "-j", "RETURN"],
+                capture_output=True
+            )
+            log(f"🧹 Bypass expirado removido: {mac}")
+
+
 def autorizar_mac_unifi(mac, minutos, is_free=False):
     """Autoriza guest via API de integração, com fallback para MongoDB."""
     mac_norm = _normalizar_mac(mac).lower()
@@ -637,6 +668,29 @@ def get_mac_from_ip(client_ip):
         pass
     return None
 
+_mac_auth_cache = {}
+_MAC_CACHE_TTL = 30
+
+
+def _is_mac_authorized(mac_norm):
+    now = time.time()
+    cached = _mac_auth_cache.get(mac_norm)
+    if cached and now - cached[1] < _MAC_CACHE_TTL:
+        return cached[0]
+    agora = int(now)
+    try:
+        result = subprocess.run(
+            ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+             f'db.guest.find({{"mac": "{mac_norm}", "end": {{"$gt": NumberLong({agora})}}}}).count()'],
+            capture_output=True, text=True, timeout=3
+        )
+        authorized = result.returncode == 0 and result.stdout.strip() != "0"
+    except Exception:
+        authorized = False
+    _mac_auth_cache[mac_norm] = (authorized, now)
+    return authorized
+
+
 class PortalRedirectHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -650,6 +704,37 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
             host = self.headers.get('Host', '')
             if host:
                 original_url = f"http://{host}{self.path}"
+
+        # MAC autorizado → responder "internet ok" para captive portal detection
+        if mac:
+            mac_norm = _normalizar_mac(mac).lower()
+            if _is_mac_authorized(mac_norm):
+                if '/generate_204' in self.path:
+                    self.send_response(204)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                elif '/connecttest.txt' in self.path:
+                    body = b"Microsoft Connect Test"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif '/ncsi.txt' in self.path:
+                    body = b"Microsoft NCSI"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    body = b"<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                return
 
         query_params = {}
         if mac:
@@ -671,9 +756,11 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
         log(f"[redirect] {self.client_address[0]} → {args[0] if args else ''}")
 
 
-class ReusableHTTPServer(HTTPServer):
+from socketserver import ThreadingMixIn
+
+class ReusableHTTPServer(ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
-    allow_reuse_port = True
+    daemon_threads = True
 
 def iniciar_servidor_redirect():
     for tentativa in range(5):
@@ -773,28 +860,62 @@ def _aplicar_com_iptables(ips):
 
 
 def garantir_redirect_porta_80():
-    """Garante iptables NAT redirect 80→8881 para clientes guest."""
-    regra = ["-i", GUEST_INTERFACE, "-p", "tcp", "--dport", "80",
-             "-d", GUEST_GATEWAY_IP, "-j", "REDIRECT", "--to-port", str(PORTAL_REDIRECT_PORT)]
-    check = subprocess.run(["iptables", "-t", "nat", "-C", "PREROUTING"] + regra, capture_output=True)
+    """Redireciona TODO tráfego HTTP (porta 80) de guests para o portal captive.
+
+    Regras inseridas ANTES de UBIOS_PREROUTING_JUMP para que a UDM
+    não intercepte o tráfego de captive portal detection antes de nós.
+
+    Ordem no PREROUTING:
+      1. MAC bypass (RETURN) — adicionados por _adicionar_bypass_mac()
+      2. Walled garden IPs (RETURN) — portal/assets precisam carregar
+      3. Redirect tudo restante → porta 8881
+      4. UBIOS_PREROUTING_JUMP — regras nativas da UDM
+    """
+    # Remover regra antiga (só gateway IP) se existir
+    regra_antiga = ["-i", GUEST_INTERFACE, "-p", "tcp", "--dport", "80",
+                    "-d", GUEST_GATEWAY_IP, "-j", "REDIRECT", "--to-port", str(PORTAL_REDIRECT_PORT)]
+    subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING"] + regra_antiga, capture_output=True)
+
+    regra_redirect = ["-i", GUEST_INTERFACE, "-p", "tcp", "--dport", "80",
+                      "-j", "REDIRECT", "--to-port", str(PORTAL_REDIRECT_PORT)]
+    regra_wg = (["-i", GUEST_INTERFACE, "-p", "tcp", "--dport", "80",
+                 "-m", "set", "--match-set", WALLED_GARDEN_IPSET, "dst", "-j", "RETURN"]
+                if _ipset_disponivel() else None)
+
+    # Só inserir se não existirem (preserva posição dos MAC bypass acima)
+    check_redir = subprocess.run(["iptables", "-t", "nat", "-C", "PREROUTING"] + regra_redirect, capture_output=True)
+    if check_redir.returncode != 0:
+        subprocess.run(["iptables", "-t", "nat", "-I", "PREROUTING", "1"] + regra_redirect, capture_output=True)
+        log(f"✅ Redirect porta 80→{PORTAL_REDIRECT_PORT} inserido antes de UBIOS")
+
+    if regra_wg:
+        check_wg = subprocess.run(["iptables", "-t", "nat", "-C", "PREROUTING"] + regra_wg, capture_output=True)
+        if check_wg.returncode != 0:
+            subprocess.run(["iptables", "-t", "nat", "-I", "PREROUTING", "1"] + regra_wg, capture_output=True)
+            log(f"✅ Exceção walled garden inserida antes do redirect")
+
+    # Garantir que guests conseguem acessar a porta do redirect
+    regra_input = ["-i", GUEST_INTERFACE, "-p", "tcp", "--dport", str(PORTAL_REDIRECT_PORT), "-j", "ACCEPT"]
+    check = subprocess.run(["iptables", "-C", "INPUT"] + regra_input, capture_output=True)
     if check.returncode != 0:
-        subprocess.run(["iptables", "-t", "nat", "-I", "PREROUTING", "1"] + regra, capture_output=True)
-        log(f"✅ Redirect porta 80→{PORTAL_REDIRECT_PORT} aplicado")
+        subprocess.run(["iptables", "-I", "INPUT", "1"] + regra_input, capture_output=True)
+        log(f"✅ INPUT ACCEPT porta {PORTAL_REDIRECT_PORT} para guests")
 
 
 # Loop principal — autorizações/revogações a cada 5s, tarefas pesadas a cada 60s
 if __name__ == "__main__":
     threading.Thread(target=iniciar_servidor_redirect, daemon=True).start()
     time.sleep(2)
-    garantir_redirect_porta_80()
     aplicar_walled_garden()
+    garantir_redirect_porta_80()
     _ciclo = 0
     while True:
         processar_autorizacoes()
         processar_revogacoes()
         if _ciclo % 12 == 0:
             processar_vouchers()
-            garantir_redirect_porta_80()
             aplicar_walled_garden()
+            garantir_redirect_porta_80()
+            _limpar_bypass_expirados()
         _ciclo += 1
         time.sleep(5)
