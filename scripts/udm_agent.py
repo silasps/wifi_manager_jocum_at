@@ -882,6 +882,21 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
         if mac and _is_tv(user_agent):
             mac_norm = _normalizar_mac(mac).lower()
             pin = _get_or_create_tv_pin(mac_norm)
+
+            # Se a TV chegou via prova de captive portal (generate_204, connecttest, etc.)
+            # faz 302 redirect para forçar a CNA abrir o browser embutido
+            is_captive_probe = any(p in self.path for p in ['/generate_204', '/connecttest', '/ncsi', '/hotspot-detect', '/canonical.html'])
+            if is_captive_probe and '/tv' not in self.path:
+                redirect_url = f"http://{GUEST_GATEWAY_IP}/tv?id={urllib.parse.quote(mac_norm)}"
+                self.send_response(302)
+                self.send_header("Location", redirect_url)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                log(f"📺 TV detectada (captive probe) → redirect CNA: {mac_norm}")
+                return
+
+            # Caso contrário (browser aberto manualmente, ou CNA já abriu via redirect)
+            # serve a página do PIN direto
             formatted_pin = f"{pin[:3]}  {pin[3:]}"
             body = _TV_PIN_HTML.replace('{{PIN}}', formatted_pin).encode()
             self.send_response(200)
