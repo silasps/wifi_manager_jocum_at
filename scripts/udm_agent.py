@@ -164,7 +164,7 @@ def converter_tempo_para_minutos(tempo_desc):
 # ===============================
 def buscar_vouchers_supabase():
     path = f"/rest/v1/{TABELA_VOUCHERS}?{urllib.parse.urlencode({'select': '*', 'status': 'eq.pendente'})}"
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context())
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
@@ -184,7 +184,7 @@ def atualizar_voucher_supabase(id_registro, codigo, data_expiracao, quota):
         "id_voucher": codigo,  # Preenchendo a coluna 'id_voucher' com o código gerado
         "quota": quota
     })
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context())
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -197,7 +197,7 @@ def atualizar_voucher_supabase(id_registro, codigo, data_expiracao, quota):
         raise Exception(f"Erro Supabase PATCH: {res.status} - {data}")
 def buscar_cliente_nome_formatado(cliente_uid):
     path = f"/rest/v1/clientes?user_id=eq.{cliente_uid}&select=nome"
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context())
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
@@ -292,7 +292,7 @@ def processar_vouchers():
 # ===============================
 def buscar_autorizacoes_pendentes():
     path = f"/rest/v1/autorizacoes?{urllib.parse.urlencode({'select': '*', 'status': 'eq.pendente'})}"
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context())
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     conn.request("GET", path, headers=headers)
     res = conn.getresponse()
@@ -314,7 +314,7 @@ def atualizar_autorizacao_status(id_reg, status, detalhe=None):
     #     payload_dict["detalhe"] = str(detalhe)[:500]
 
     payload = json.dumps(payload_dict).encode()
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context())
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
     conn.request(
         "PATCH",
         path,
@@ -600,7 +600,7 @@ def processar_autorizacoes():
 # ===============================
 def buscar_autorizacoes_revogadas():
     path = f"/rest/v1/autorizacoes?{urllib.parse.urlencode({'select': '*', 'status': 'eq.revogado'})}"
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context())
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     conn.request("GET", path, headers=headers)
     res = conn.getresponse()
@@ -727,14 +727,14 @@ def _store_tv_pin(pin, mac):
     }
     ctx = ssl._create_unverified_context()
     delete_path = f"/rest/v1/tv_pins?mac_address=eq.{urllib.parse.quote(mac)}"
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ctx)
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ctx, timeout=10)
     conn.request("DELETE", delete_path, headers=headers)
     conn.getresponse().read()
     conn.close()
 
     insert_path = "/rest/v1/tv_pins"
     payload = json.dumps({"pin": pin, "mac_address": mac})
-    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ctx)
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ctx, timeout=10)
     conn.request("POST", insert_path, body=payload, headers=headers)
     conn.getresponse().read()
     conn.close()
