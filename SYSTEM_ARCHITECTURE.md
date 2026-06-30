@@ -214,24 +214,29 @@ Necessários para que a página do portal e autenticação funcionem:
 ### Servidor Redirect (thread daemon, porta 8881)
 - Multi-threaded (`ThreadingMixIn`) — não trava com muitos requests
 - Verifica MongoDB antes de redirecionar (cache 30s)
-- Para MACs autorizados, retorna resposta específica por SO:
-  - Android (`/generate_204`) → HTTP 204
-  - Windows (`/connecttest.txt`) → `"Microsoft Connect Test"` text/plain
-  - Windows legado (`/ncsi.txt`) → `"Microsoft NCSI"` text/plain
-  - iOS/macOS (outros paths) → HTML `"Success"`
-- Retorna 302 para Vercel para MACs não autorizados
+- Para MACs autorizados:
+  - Probes de conectividade conhecidas → resposta exata esperada pelo SO (tabela `_PROBE_DISPATCH`)
+  - Qualquer outra requisição HTTP → **proxy transparente** para o host original (header `Host:`)
+- Para MACs não autorizados: 302 para Vercel (phones/computers) ou página PIN (Smart TVs)
+- `do_HEAD` suportado — Roku e alguns Android TV usam HEAD para connectivity checks
 
 ### Autorização (`autorizar_mac_unifi`)
 1. Normaliza MAC
 2. Cria guest record no MongoDB se não existir (`_garantir_guest_record`)
-3. Tenta API UniFi (`AUTHORIZE_GUEST_ACCESS`)
-4. Se API falhar (MAC privado): fallback MongoDB direto (`_autorizar_via_mongo`)
+3. Tenta API UniFi (`AUTHORIZE_GUEST_ACCESS`) — best-effort, falha anotada como `[api]` no log
+4. Se API falhar (MAC privado, permissão insuficiente): fallback MongoDB direto (`_autorizar_via_mongo`)
 5. Aplica QoS se free (123 Kbps)
+
+**Nota:** A API key configurada (`UNIFI_API_KEY`) tem permissão para `POST .../actions` mas não para
+listar clientes por MAC (`GET .../clients?filter=...`). Isso é normal — o MongoDB sempre funciona como
+fallback confiável para todos os casos.
 
 ### Revogação (`kick_mac_unifi`)
 1. Remove bypass iptables do MAC
-2. Chama API UniFi `UNAUTHORIZE_GUEST_ACCESS`
-3. Remove guest do MongoDB (`db.guest.remove`)
+2. Remove guest do MongoDB (`db.guest.remove`)
+
+**Nota:** A chamada `UNAUTHORIZE_GUEST_ACCESS` via API foi removida (endpoint de listagem de clientes
+por MAC retorna 401 — permissão insuficiente). iptables + MongoDB já garantem o kick real.
 
 ---
 
@@ -269,6 +274,24 @@ Necessários para que a página do portal e autenticação funcionem:
 
 ---
 
+## Área Administrativa — Voucher Gratuito
+
+Admins (`papel: "admin"` ou `"gestor"`) podem criar vouchers gratuitos para **qualquer cliente**,
+com duração e quota customizadas, sem necessidade de pagamento.
+
+### Como funciona
+- Em `/admin/<id>` → seção "Vouchers" → botão "+ Criar"
+- Na tela de criação: selecionar plano (Diário/Mensal/Anual), duração e quota de dispositivos
+- Opção de pagamento **"Gratuito"** disponível para todos os clientes (sem restrição de tipo de conta)
+- Confirmar → voucher criado com `status: "pendente"` → agent processa → `status: "criado"` com código real
+
+### Proteção
+- **Frontend:** página `/admin/[id]` redireciona para `/home` se `papel === "user"`
+- **Backend:** `POST /api/admin/clients/[id]/voucher` exige `requireAdmin` (valida token + papel no banco)
+- Registro financeiro gerado com `valor_pago: 0` e `comprovante_pgto: "admin:Gratuito | atendimento pessoal"`
+
+---
+
 ## Tabelas Supabase
 
 ### `clientes`
@@ -296,8 +319,13 @@ cd /data/scripts && python3 udm_agent.py
 
 ### Crontab (auto-restart no boot + crash recovery)
 ```
-@reboot while true; do /data/scripts/start_agent.sh; sleep 5; done
+@reboot while true; do /data/scripts/start_agent.sh >> /data/scripts/voucher.log 2>&1; sleep 5; done
 ```
+
+**⚠️ Importante:** O crontab deve chamar `start_agent.sh` (não `python3 udm_agent.py` diretamente).
+`start_agent.sh` exporta `SUPABASE_SERVICE_ROLE_KEY` — sem esse passo o agent inicia com a variável
+vazia e todas as chamadas ao Supabase retornam `401 No API key found`. O redirecionamento `>> voucher.log`
+também é essencial para o loop `while true` não engolir erros silenciosamente.
 
 ### Verificação rápida
 ```bash
@@ -330,6 +358,28 @@ mongo --port 27117 ace --quiet --eval 'db.setting.update({key: "guest_access"}, 
 ### MACs privados (randomizados)
 iOS/Android usam MACs aleatórios. A API UniFi não enxerga esses MACs. O agent usa fallback MongoDB direto para autorizá-los.
 
+### Agent travado sem processar autorizações (RESOLVIDO)
+**Sintoma:** Autorizações ficam em `status: "pendente"` por mais de 1 minuto; frontend mostra "Liberando acesso..." indefinidamente.
+**Causa A — Processo iniciado sem `start_agent.sh`:** Se o agente for iniciado diretamente com `python3 udm_agent.py` sem passar pelo `start_agent.sh`, a `SUPABASE_SERVICE_ROLE_KEY` fica vazia. Todas as chamadas ao Supabase retornam `401 No API key found`. O loop continua rodando mas nunca processa nada. Crontab com auto-restart não detecta (processo não cai — só fica inoperante).
+**Causa B — Conexão HTTPS sem timeout:** Chamadas ao Supabase sem `timeout=` param bloqueiam indefinidamente em caso de instabilidade de rede, travando o loop principal (thread única). O processo aparece "vivo" mas não responde.
+**Fix aplicado:** Todas as `http.client.HTTPSConnection(SUPABASE_URL, ...)` agora têm `timeout=10`. Crontab corrigido para usar `start_agent.sh`.
+**Diagnóstico rápido:**
+```bash
+# Autorizações presas?
+# (Via Supabase REST — substitua URL e KEY)
+curl -s ".../rest/v1/autorizacoes?status=eq.pendente" -H "apikey: ..." | python3 -m json.tool
+
+# Agent rodando?
+ps aux | grep udm_agent | grep -v grep
+
+# Log mostra 401?
+tail -20 /data/scripts/voucher.log | grep "401\|Erro"
+
+# Solução: matar processo e reiniciar via start_agent.sh
+pkill -f udm_agent.py
+cd /data/scripts && nohup ./start_agent.sh >> /data/scripts/voucher.log 2>&1 & disown
+```
+
 ### Windows NCSI — "Sem internet" após autenticação (RESOLVIDO)
 Cada SO usa uma URL e resposta específica para detectar conectividade (NCSI). Se o redirect server
 retornar a resposta errada, o SO marca a rede como "sem internet" mesmo com tráfego fluindo.
@@ -342,3 +392,70 @@ Para verificar: `iptables -t nat -S PREROUTING | grep -v br0` — deve retornar 
 
 ### Após atualização de firmware da UDM
 Verificar: agent rodando, crontab existente, regras iptables no lugar, `redirect_https: false`.
+
+---
+
+## Smart TVs — Fluxo Específico
+
+### Por que TVs são diferentes de phones/computadores
+
+Smart TVs **não abrem browser automaticamente** ao conectar. Em vez disso, o SO da TV faz uma série de probes HTTP proprietários para decidir se há internet ou captive portal. Se qualquer probe retornar resposta errada, a TV marca a rede como "captive portal ativo" — e apps como Amazon Prime e Disney+ bloqueam completamente (Netflix tem bypass especial para hotspot/hotel).
+
+### TV **não autorizada** — Fluxo PIN
+
+1. TV conecta → SO faz probe HTTP (ex: `/h`, `/generate_204`)
+2. Agent detecta User-Agent de TV (`_is_tv()`)
+3. Para **probes** → 302 para `http://10.70.0.1/tv?id=<MAC>` — força CNA a abrir browser embutido
+4. Browser da TV exibe página com PIN de 6 dígitos
+5. Usuário digita o PIN no celular via portal web
+6. Agent autoriza o MAC no MongoDB
+7. TV reconecta — agora flui pelo caminho de TV autorizada
+
+### TV **autorizada** — Fluxo de probes
+
+O agent retorna respostas exatas para cada probe da tabela `_PROBE_DISPATCH`:
+
+| Path / fragmento | Status | Body | SO |
+|---|---|---|---|
+| `/generate_204` | 204 | vazio | Android, LG, Chromecast |
+| `/204` | 204 | vazio | Samsung alternativo |
+| `/connecttest.txt` | 200 | `Microsoft Connect Test` | Windows, Xbox |
+| `/ncsi.txt` | 200 | `Microsoft NCSI` | Windows legado |
+| `/hotspot-detect` | 200 | HTML Success | Apple TV, iOS |
+| `/canonical.html` | 200 | HTML Success | Apple |
+| `/h` | 200 | `c` | **Samsung Tizen** (samsungcloudsolution.com) |
+| `check.xml` | 200 | XML `<netcheck><connection>OK</connection></netcheck>` | **Samsung Tizen** |
+| `/success.txt` | 200 | `success\n` | Firefox, Amazon |
+| `/kindle-wifi/wifistub.html` | 200 | HTML Kindle | Amazon Fire TV |
+| `/roku-tos-checker.html` | 200 | vazio | Roku |
+| `/cs/` | 200 | vazio | LG webOS |
+
+**Samsung Tizen — probes específicos além da tabela:**
+- `GET /openapi/timesync?client=T20O` → **proxy para `openapi.samsungcloudsolution.net`** (retorna timestamp real no formato exato do Tizen — necessário para validação de certificados HTTPS)
+- `POST /appboot/SSTV-KS20-?suspended=true` → **proxy para servidor Samsung** (resposta JSON da Samsung usada para inicializar Smart Hub)
+- Qualquer outra requisição HTTP → **proxy transparente** para o host original
+
+### Race condition no ARP (resolvida)
+
+TV conecta → probe imediata antes do ARP resolver → `get_mac_from_ip()` retorna `None` → TV recebe 302 → Samsung marca "captive portal".
+
+**Fix:** `get_mac_from_ip()` tenta até 3 vezes com 300ms de espera entre tentativas.
+
+### TVs atrás de roteador terceiro (TP-Link como repetidor)
+
+Quando o cliente usa roteador próprio em modo repetidor/NAT entre a TV e a UDM:
+- Todos os dispositivos atrás do roteador aparecem com o **IP e MAC do roteador** na UDM
+- Autorizar o MAC do roteador libera todos os dispositivos conectados a ele
+- O MAC visível na UDM é o **MAC WAN** do roteador (= MAC da etiqueta + 1 em alguns modelos TP-Link)
+- Verificar MAC real: `ip neigh show <IP_DO_ROTEADOR>` na UDM
+
+### Keywords de detecção de TV (`_is_tv()`)
+
+User-Agent contendo qualquer um dos termos detecta TV e ativa o fluxo PIN:
+`smarttv`, `smart-tv`, `tizen`, `webos`, `web0s`, `netcast`, `roku`, `appletv`, `bravia`, `androidtv`, `chromecast`, `crkey`, `aftm`, `afts`, `aftt`, `aftb`, `aftmm`, `vizio`, `hbbtv`, `philipstv`, `nettv`, `playstation`, `xbox`, `nintendo`, `lg browser`, `googletv`, `google tv`, `vidaa`, `foxxum`, `orsay`, `firetv`, `fire tv`, `amazontv`, `semp`, `philco`
+
+### Por que Netflix funciona mas YouTube/Amazon/Disney não (sem proxy)
+
+Netflix tem suporte nativo a redes de hotspot/hotel — ignora o estado "captive portal ativo".
+YouTube, Amazon Prime e Disney+ não têm esse bypass: se o SO marcou "captive portal", os apps bloqueiam.
+Além disso, apps fazem chamadas HTTP a APIs da Samsung (Smart Hub, `appboot`) e CDNs — sem proxy, o agent retornava HTML em vez da resposta real → apps quebravam mesmo com TV mostrando "conectado".
