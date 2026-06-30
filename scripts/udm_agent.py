@@ -446,21 +446,35 @@ def buscar_unifi_client_id_por_mac(mac):
     site_id = obter_unifi_site_id()
     mac_norm = _normalizar_mac(mac)
 
-    # Conforme documentação: filter=macAddress.eq('AA:AA:AA:AA:AA:AA')
     query = urllib.parse.urlencode({"filter": f"macAddress.eq('{mac_norm}')"})
-    clientes = unifi_api("GET", f"/v1/sites/{site_id}/clients?{query}")
+    resp = unifi_api("GET", f"/v1/sites/{site_id}/clients?{query}")
 
-    if isinstance(clientes, dict):
-        # Algumas APIs retornam {data: [...]} ou formato semelhante.
-        clientes = clientes.get("data") or clientes.get("items") or clientes.get("results") or [clientes]
+    # Normalizar resposta para lista de objetos
+    if isinstance(resp, dict):
+        # Extrai "data"/"items"/"results" — usa "in" para não confundir lista vazia com ausência
+        if "data" in resp:
+            clientes = resp["data"]
+        elif "items" in resp:
+            clientes = resp["items"]
+        elif "results" in resp:
+            clientes = resp["results"]
+        else:
+            clientes = [resp]
+    elif isinstance(resp, list):
+        clientes = resp
+    else:
+        raise Exception(f"Resposta inesperada da UniFi API ({type(resp).__name__}): {str(resp)[:120]}")
 
     if not clientes:
-        raise Exception(f"Cliente não encontrado na UniFi API para MAC {mac_norm}. O aparelho precisa estar conectado ao Wi-Fi/hotspot.")
+        raise Exception(f"Cliente não encontrado na UniFi API para MAC {mac_norm}.")
 
     cliente = clientes[0]
+    if not isinstance(cliente, dict):
+        raise Exception(f"Elemento inesperado na resposta ({type(cliente).__name__}): {str(cliente)[:120]}")
+
     client_id = cliente.get("id") or cliente.get("clientId")
     if not client_id:
-        raise Exception(f"Cliente encontrado, mas sem clientId/id: {cliente}")
+        raise Exception(f"Cliente sem id/clientId: {cliente}")
 
     return site_id, client_id, mac_norm
 
@@ -553,7 +567,7 @@ def autorizar_mac_unifi(mac, minutos, is_free=False):
     mac_norm = _normalizar_mac(mac).lower()
     velocidade = VELOCIDADE_FREE_KBPS if is_free else None
     _garantir_guest_record(mac_norm)
-    # Tentar API de integração
+    # Tentar API de integração (melhor esforço — fallback MongoDB sempre garante)
     try:
         site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
         payload = {
@@ -566,8 +580,8 @@ def autorizar_mac_unifi(mac, minutos, is_free=False):
             log(f"✅ QoS aplicado: {mac_norm} → {velocidade} Kbps")
         return result
     except Exception as e:
-        log(f"⚠️ API falhou ({e}), autorizando via MongoDB...")
-    # Fallback: MongoDB direto (com QoS se free)
+        log(f"[api] AUTHORIZE indisponível ({type(e).__name__}), usando MongoDB")
+    # Fallback garantido: MongoDB direto (com QoS se free)
     _autorizar_via_mongo(mac_norm, minutos, velocidade)
 
 
@@ -617,15 +631,7 @@ def kick_mac_unifi(mac):
     subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING",
                     "-m", "mac", "--mac-source", mac_norm, "-j", "RETURN"],
                    capture_output=True)
-    # 1) Desautorizar via API de integração (atualiza firewall do UniFi)
-    try:
-        site_id, client_id, _ = buscar_unifi_client_id_por_mac(mac)
-        unifi_api("POST", f"/v1/sites/{site_id}/clients/{client_id}/actions",
-                  {"action": "UNAUTHORIZE_GUEST_ACCESS"})
-        log(f"✅ Kick API OK (UNAUTHORIZE_GUEST_ACCESS) para {mac_norm}")
-    except Exception as e:
-        log(f"⚠️ Kick API falhou ({e})")
-    # 2) Remover do MongoDB (desconecta de verdade)
+    # Remover do MongoDB (desconecta de verdade — API de integração não é necessária)
     subprocess.run(
         ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
          f'db.guest.remove({{"mac": "{mac_norm}"}})'],
@@ -654,19 +660,22 @@ def processar_revogacoes():
 # ===============================
 # SERVIDOR DE REDIRECIONAMENTO
 # ===============================
-def get_mac_from_ip(client_ip):
-    try:
-        result = subprocess.run(
-            ['ip', 'neigh', 'show', client_ip],
-            capture_output=True, text=True, timeout=2
-        )
-        for line in result.stdout.strip().split('\n'):
-            if client_ip in line and 'lladdr' in line:
-                parts = line.split()
-                idx = parts.index('lladdr')
-                return parts[idx + 1]
-    except Exception:
-        pass
+def get_mac_from_ip(client_ip, retries=3, delay=0.3):
+    for attempt in range(retries):
+        try:
+            result = subprocess.run(
+                ['ip', 'neigh', 'show', client_ip],
+                capture_output=True, text=True, timeout=2
+            )
+            for line in result.stdout.strip().split('\n'):
+                if client_ip in line and 'lladdr' in line:
+                    parts = line.split()
+                    idx = parts.index('lladdr')
+                    return parts[idx + 1]
+        except Exception:
+            pass
+        if attempt < retries - 1:
+            time.sleep(delay)
     return None
 
 _mac_auth_cache = {}
@@ -701,6 +710,8 @@ _TV_KEYWORDS = [
     'aftm', 'afts', 'aftt', 'aftb', 'aftmm',
     'vizio', 'hbbtv', 'philipstv', 'nettv',
     'playstation', 'xbox', 'nintendo', 'lg browser',
+    'googletv', 'google tv', 'vidaa', 'foxxum', 'orsay',
+    'firetv', 'fire tv', 'amazontv', 'semp', 'philco',
 ]
 
 _tv_pin_cache = {}
@@ -712,6 +723,57 @@ def _is_tv(user_agent):
         return False
     ua = user_agent.lower()
     return any(kw in ua for kw in _TV_KEYWORDS)
+
+
+# ===============================
+# TABELA DE PROBES DE CAPTIVE PORTAL
+# ===============================
+# Fonte única da verdade para respostas de connectivity check de todos os OSes e TVs.
+# Cada entrada: (path_fragment, http_status, content_type_or_None, body_bytes)
+# Ordem importa: primeiro match ganha.
+_APPLE_SUCCESS = b"<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
+_KINDLE_STUB   = b"<html><head><meta http-equiv=\"Cache-Control\" content=\"no-cache\"/></head><body>Kindle Wireless Setup</body></html>"
+
+_SAMSUNG_CHECK_XML = b'<?xml version="1.0" encoding="UTF-8"?><netcheck><connection>OK</connection></netcheck>'
+
+_PROBE_DISPATCH = [
+    ('/generate_204',              204, None,          b''),
+    ('/204',                       204, None,          b''),
+    ('/connecttest.txt',           200, 'text/plain',  b'Microsoft Connect Test'),
+    ('/ncsi.txt',                  200, 'text/plain',  b'Microsoft NCSI'),
+    ('/hotspot-detect',            200, 'text/html',   _APPLE_SUCCESS),        # Apple TV / iOS
+    ('/canonical.html',            200, 'text/html',   _APPLE_SUCCESS),        # Apple
+    ('/h',                         200, 'text/plain',  b'c'),                  # Samsung Tizen /h
+    ('check.xml',                  200, 'text/xml',    _SAMSUNG_CHECK_XML),    # Samsung check.xml
+    ('/success.txt',               200, 'text/plain',  b'success\n'),          # detectportal / Firefox
+    ('/kindle-wifi/wifistub.html', 200, 'text/html',   _KINDLE_STUB),          # Amazon Fire TV
+    ('/roku-tos-checker.html',     200, 'text/html',   b''),                   # Roku
+    ('/cs/',                       200, 'text/plain',  b''),                   # LG webOS alternativo
+]
+
+
+def _match_probe(path):
+    """Retorna a tupla de _PROBE_DISPATCH para o path, ou None se não for probe."""
+    for fragment, status, ctype, body in _PROBE_DISPATCH:
+        if fragment in path:
+            return (status, ctype, body)
+    return None
+
+
+def _send_probe_response(handler, status, content_type, body):
+    """Envia resposta de connectivity probe com headers corretos e Cache-Control."""
+    handler.send_response(status)
+    handler.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+    handler.send_header('Pragma', 'no-cache')
+    if content_type:
+        handler.send_header('Content-Type', content_type)
+    if not getattr(handler, '_head_mode', False):
+        handler.send_header('Content-Length', str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    else:
+        handler.send_header('Content-Length', str(len(body)))
+        handler.end_headers()
 
 
 def _generate_tv_pin():
@@ -825,7 +887,86 @@ body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 
 
 class PortalRedirectHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self._head_mode = True
+        self.do_GET()
+
+    def _proxy_to_host(self, method='GET', body=None):
+        """Para MACs autorizados: encaminha a requisição HTTP ao host original e retorna a resposta real.
+        Necessário porque o iptables intercepta TODO port 80, inclusive chamadas de apps (YouTube, Prime, etc.)
+        que esperam JSON/dados reais — não nosso HTML de sucesso."""
+        host = self.headers.get('Host', '')
+        if not host:
+            return False
+        try:
+            hostname = host.split(':')[0]
+            port = int(host.split(':')[1]) if ':' in host else 80
+            conn = http.client.HTTPConnection(hostname, port, timeout=10)
+            fwd_headers = {k: v for k, v in self.headers.items()
+                          if k.lower() not in ('connection', 'proxy-connection')}
+            conn.request(method, self.path, body=body, headers=fwd_headers)
+            resp = conn.getresponse()
+            resp_body = resp.read()
+            conn.close()
+            self.send_response(resp.status)
+            for k, v in resp.getheaders():
+                if k.lower() not in ('transfer-encoding', 'connection', 'content-length'):
+                    self.send_header(k, v)
+            self.send_header('Content-Length', str(len(resp_body)))
+            self.end_headers()
+            if not getattr(self, '_head_mode', False):
+                self.wfile.write(resp_body)
+            return True
+        except Exception:
+            return False
+
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length) if length else b''
+        client_ip = self.client_address[0]
+        mac = get_mac_from_ip(client_ip)
+        if mac and _is_mac_authorized(_normalizar_mac(mac).lower()):
+            # Proxy para o servidor real (ex: sac.api.samsungcloudsolution.com/appboot/)
+            if not self._proxy_to_host('POST', body):
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', '14')
+                self.end_headers()
+                self.wfile.write(b'{"result":"ok"}')
+        else:
+            redirect_url = f"http://{GUEST_GATEWAY_IP}/"
+            self.send_response(302)
+            self.send_header('Location', redirect_url)
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+
+    def _try_timesync(self):
+        """Timesync Samsung: tenta proxy para o servidor real (formato exato), fallback para JSON local."""
+        if '/openapi/timesync' not in self.path and '/timesync' not in self.path:
+            return False
+        # Proxy para o servidor real da Samsung — resposta no formato exato que o Tizen espera
+        if self._proxy_to_host():
+            return True
+        # Fallback se o servidor Samsung não estiver acessível via HTTP
+        now = datetime.datetime.utcnow()
+        ts_ms = int(time.time() * 1000)
+        iso = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+        body = json.dumps({"result": 0, "serverTime": iso, "time_stamp": ts_ms}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        if not getattr(self, '_head_mode', False):
+            self.wfile.write(body)
+        return True
+
     def do_GET(self):
+        # Samsung Tizen faz GET /openapi/timesync — precisa de timestamp real ou HTTPS falha
+        if self._try_timesync():
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query)
         mac = params.get('id', [None])[0]
@@ -839,71 +980,69 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
                 original_url = f"http://{host}{self.path}"
 
         user_agent = self.headers.get('User-Agent', '')
+        probe = _match_probe(self.path)
 
         # MAC autorizado → responder "internet ok" para captive portal detection
         if mac:
             mac_norm = _normalizar_mac(mac).lower()
             if _is_mac_authorized(mac_norm):
-                if _is_tv(user_agent):
+                if probe:
+                    # Probe de conectividade → resposta exata esperada pelo OS (evita "captive portal ativo")
+                    _send_probe_response(self, *probe)
+                elif self.path.startswith('/tv'):
+                    # Página de PIN da TV (auto-refresh) já autorizada → sucesso direto, sem tentar proxy
                     body = _TV_CONNECTED_HTML.encode()
                     self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('Content-Length', str(len(body)))
                     self.end_headers()
-                    self.wfile.write(body)
-                elif '/generate_204' in self.path:
-                    self.send_response(204)
-                    self.send_header("Content-Length", "0")
-                    self.end_headers()
-                elif '/connecttest.txt' in self.path:
-                    body = b"Microsoft Connect Test"
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/plain")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                elif '/ncsi.txt' in self.path:
-                    body = b"Microsoft NCSI"
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/plain")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
+                    if not getattr(self, '_head_mode', False):
+                        self.wfile.write(body)
                 else:
-                    body = b"<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
+                    # Chamada HTTP real (API de app, CDN, etc.) → proxy para o servidor original
+                    if not self._proxy_to_host():
+                        # Fallback se proxy falhar: página de sucesso para browser da TV
+                        body = _TV_CONNECTED_HTML.encode() if _is_tv(user_agent) else _APPLE_SUCCESS
+                        ctype = 'text/html; charset=utf-8' if _is_tv(user_agent) else 'text/html'
+                        self.send_response(200)
+                        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                        self.send_header('Content-Type', ctype)
+                        self.send_header('Content-Length', str(len(body)))
+                        self.end_headers()
+                        if not getattr(self, '_head_mode', False):
+                            self.wfile.write(body)
                 return
+
+            # MAC não autorizado → log do User-Agent para diagnóstico (decidir se falta cobrir em _TV_KEYWORDS)
+            if probe:
+                log(f"🔍 Probe não autorizado {mac_norm} UA=\"{user_agent}\" path={self.path}")
 
         # TV não autorizada → página com PIN para o usuário autorizar pelo celular
         if mac and _is_tv(user_agent):
             mac_norm = _normalizar_mac(mac).lower()
             pin = _get_or_create_tv_pin(mac_norm)
 
-            # Se a TV chegou via prova de captive portal (generate_204, connecttest, etc.)
-            # faz 302 redirect para forçar a CNA abrir o browser embutido
-            is_captive_probe = any(p in self.path for p in ['/generate_204', '/connecttest', '/ncsi', '/hotspot-detect', '/canonical.html'])
-            if is_captive_probe and '/tv' not in self.path:
+            # Probe de captive portal → 302 para forçar CNA abrir o browser embutido
+            if probe and '/tv' not in self.path:
                 redirect_url = f"http://{GUEST_GATEWAY_IP}/tv?id={urllib.parse.quote(mac_norm)}"
                 self.send_response(302)
-                self.send_header("Location", redirect_url)
-                self.send_header("Content-Length", "0")
+                self.send_header('Location', redirect_url)
+                self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                self.send_header('Content-Length', '0')
                 self.end_headers()
                 log(f"📺 TV detectada (captive probe) → redirect CNA: {mac_norm}")
                 return
 
-            # Caso contrário (browser aberto manualmente, ou CNA já abriu via redirect)
-            # serve a página do PIN direto
+            # Browser aberto manualmente ou CNA já abriu → serve página do PIN
             formatted_pin = f"{pin[:3]}  {pin[3:]}"
             body = _TV_PIN_HTML.replace('{{PIN}}', formatted_pin).encode()
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if not getattr(self, '_head_mode', False):
+                self.wfile.write(body)
             return
 
         query_params = {}
