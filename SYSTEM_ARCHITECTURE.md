@@ -349,6 +349,15 @@ tail -20 /data/scripts/voucher.log
 ### Tela de login da UDM aparece antes do portal
 A UDM mostra brevemente sua tela de login (UniFi OS) via HTTPS antes do nosso portal carregar. É cosmético — o usuário pode fechar. Causado pelo portal nativo da UDM que não pode ser completamente desativado sem perder o guest isolation.
 
+### Portal admin da UDM aparece após login bem-sucedido (RESOLVIDO)
+**Sintoma:** Depois de autenticar no portal Vercel e ver "Você está conectado!", o browser abre o portal de admin do UniFi OS (`https://10.70.0.1`).
+**Causa:** Dois comportamentos novos introduzidos para suporte a Smart TVs criaram um caminho até o admin da UDM em phones/computadores:
+1. `do_POST` redirecionava MACs não autorizados para `http://10.70.0.1/` (gateway). O browser seguia esse redirect como GET.
+2. `_proxy_to_host()` para MACs autorizados conectava em `10.70.0.1:80` **de dentro do processo da UDM**, bypassando o iptables. O servidor HTTP da UDM respondia com `301 → https://10.70.0.1/` → browser abria o admin.
+**Fix aplicado:**
+- `do_POST` não autorizado redireciona para o portal Vercel (igual ao `do_GET`), nunca para o gateway.
+- `_proxy_to_host()` rejeita requisições com `Host: 10.70.0.1` (retorna False) antes de tentar conectar.
+
 ### `redirect_https` deve ser `false`
 Se `redirect_https: true` no MongoDB da UDM, a UDM redireciona via HTTPS e o iptables (porta 80) não intercepta. Corrigir com:
 ```bash
@@ -433,7 +442,7 @@ O agent retorna respostas exatas para cada probe da tabela `_PROBE_DISPATCH`:
 **Samsung Tizen — probes específicos além da tabela:**
 - `GET /openapi/timesync?client=T20O` → **proxy para `openapi.samsungcloudsolution.net`** (retorna timestamp real no formato exato do Tizen — necessário para validação de certificados HTTPS)
 - `POST /appboot/SSTV-KS20-?suspended=true` → **proxy para servidor Samsung** (resposta JSON da Samsung usada para inicializar Smart Hub)
-- Qualquer outra requisição HTTP → **proxy transparente** para o host original
+- Qualquer outra requisição HTTP → **proxy transparente** para o host original (exceto `Host: 10.70.0.1` — bloqueado para evitar redirect ao admin da UDM)
 
 ### Race condition no ARP (resolvida)
 

@@ -66,8 +66,9 @@ WALLED_GARDEN_DOMAINS = [
     "api.supabase.com",
     "auth.supabase.com",
     # Google / gstatic / reCAPTCHA
+    # NÃO incluir "gstatic.com" bare — seus IPs sobrepõem connectivitycheck.gstatic.com
+    # (URL de detecção de portal cativo do Android/LG), impedindo o popup automático
     "ssl.gstatic.com",
-    "gstatic.com",
     "www.gstatic.com",
     "fonts.gstatic.com",
     "www.google.com",
@@ -898,6 +899,10 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
         host = self.headers.get('Host', '')
         if not host:
             return False
+        # Nunca fazer proxy para o próprio gateway: a UDM responde 301→https://10.70.0.1 (admin login)
+        # sem passar pelo iptables, causando o portal da UDM aparecer no celular.
+        if host.split(':')[0] == GUEST_GATEWAY_IP:
+            return False
         try:
             hostname = host.split(':')[0]
             port = int(host.split(':')[1]) if ':' in host else 80
@@ -934,9 +939,11 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b'{"result":"ok"}')
         else:
-            redirect_url = f"http://{GUEST_GATEWAY_IP}/"
+            # Redirecionar para o portal Vercel (igual ao do_GET) — NUNCA para o gateway,
+            # pois o proxy de MACs autorizados conectaria em 10.70.0.1:80 (sem iptables)
+            # e a UDM retornaria 301→https://10.70.0.1, mostrando o portal admin.
             self.send_response(302)
-            self.send_header('Location', redirect_url)
+            self.send_header('Location', f"{PORTAL_EXTERNO_URL}/hotspot")
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.send_header('Content-Length', '0')
             self.end_headers()
@@ -1015,26 +1022,30 @@ class PortalRedirectHandler(BaseHTTPRequestHandler):
                 return
 
             # MAC não autorizado → log do User-Agent para diagnóstico (decidir se falta cobrir em _TV_KEYWORDS)
-            if probe:
-                log(f"🔍 Probe não autorizado {mac_norm} UA=\"{user_agent}\" path={self.path}")
+            if probe or '/guest/s/default/' in self.path:
+                log(f"🔍 Probe não autorizado {mac_norm} UA=\"{user_agent}\" path={self.path[:80]}")
 
         # TV não autorizada → página com PIN para o usuário autorizar pelo celular
         if mac and _is_tv(user_agent):
             mac_norm = _normalizar_mac(mac).lower()
             pin = _get_or_create_tv_pin(mac_norm)
 
-            # Probe de captive portal → 302 para forçar CNA abrir o browser embutido
-            if probe and '/tv' not in self.path:
+            # Probe de captive portal OU redirect UniFi (/guest/s/default/) → 302 para forçar CNA
+            # abrir o browser embutido. O walled garden não inclui gstatic.com bare, então
+            # connectivitycheck.gstatic.com é corretamente interceptado e cai aqui.
+            is_unifi_redirect = '/guest/s/default/' in self.path
+            if (probe or is_unifi_redirect) and '/tv' not in self.path:
                 redirect_url = f"http://{GUEST_GATEWAY_IP}/tv?id={urllib.parse.quote(mac_norm)}"
                 self.send_response(302)
                 self.send_header('Location', redirect_url)
                 self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
                 self.send_header('Content-Length', '0')
                 self.end_headers()
-                log(f"📺 TV detectada (captive probe) → redirect CNA: {mac_norm}")
+                src = 'probe' if probe else 'unifi-redirect'
+                log(f"📺 TV detectada ({src}) → redirect CNA: {mac_norm}")
                 return
 
-            # Browser aberto manualmente ou CNA já abriu → serve página do PIN
+            # Browser já abriu /tv?id=<mac> → serve página do PIN
             formatted_pin = f"{pin[:3]}  {pin[3:]}"
             body = _TV_PIN_HTML.replace('{{PIN}}', formatted_pin).encode()
             self.send_response(200)
@@ -1166,6 +1177,83 @@ def _aplicar_com_iptables(ips):
         )
 
     _garantir_regra_no_topo(["-j", chain])
+
+
+# ===============================
+# BLOQUEIO HTTPS PARA NÃO-AUTORIZADOS
+# ===============================
+# Sem isso, TVs com LG webOS (e Android 10+) conseguem acessar o internet
+# via HTTPS sem passar pelo portal — suas probes de conectividade
+# (connectivitycheck.gstatic.com) retornam 204 real e a TV nunca mostra
+# a notificação "Entrar na rede".
+HOTSPOT_AUTHORIZED_IPSET = "hotspot_authorized"
+_https_block_last_run = 0
+
+def _obter_macs_autorizados_mongo():
+    agora = int(time.time())
+    r = subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         f'db.guest.find({{authorized:true,end:{{$gt:NumberLong({agora})}}}},{{mac:1,_id:0}}).toArray()'],
+        capture_output=True, text=True, timeout=10
+    )
+    if r.returncode != 0:
+        return set()
+    return {m.lower() for m in re.findall(r'"mac"\s*:\s*"([0-9a-f:]{17})"', r.stdout, re.I)}
+
+def _arp_mac_para_ip():
+    r = subprocess.run(["arp", "-n"], capture_output=True, text=True, timeout=5)
+    result = {}
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and ':' in parts[2]:
+            result[parts[2].lower()] = parts[0]
+    return result
+
+def aplicar_bloqueio_https():
+    """Bloqueia HTTPS de IPs não autorizados para destinos fora do walled garden.
+
+    Regra inserida em FORWARD posição 2 (logo após o ACCEPT do walled garden):
+      REJECT tcp dport 443 from !authorized to !walled_garden
+    """
+    global _https_block_last_run
+    agora = time.time()
+    if agora - _https_block_last_run < WALLED_GARDEN_REFRESH_SECONDS:
+        return
+    _https_block_last_run = agora
+
+    try:
+        if not _ipset_disponivel():
+            return
+
+        macs = _obter_macs_autorizados_mongo()
+        mac_to_ip = _arp_mac_para_ip()
+        ips_auth = {mac_to_ip[m] for m in macs if m in mac_to_ip}
+
+        subprocess.run(["ipset", "create", "-exist", HOTSPOT_AUTHORIZED_IPSET, "hash:ip"],
+                       capture_output=True, check=True)
+        tmp = HOTSPOT_AUTHORIZED_IPSET + "_tmp"
+        subprocess.run(["ipset", "create", "-exist", tmp, "hash:ip"], capture_output=True, check=True)
+        subprocess.run(["ipset", "flush", tmp], capture_output=True, check=True)
+        for ip in ips_auth:
+            subprocess.run(["ipset", "add", "-exist", tmp, ip], capture_output=True)
+        subprocess.run(["ipset", "swap", tmp, HOTSPOT_AUTHORIZED_IPSET], capture_output=True, check=True)
+        subprocess.run(["ipset", "destroy", tmp], capture_output=True)
+
+        regra = [
+            "-p", "tcp", "--dport", "443",
+            "-m", "set", "!", "--match-set", WALLED_GARDEN_IPSET, "dst",
+            "-m", "set", "!", "--match-set", HOTSPOT_AUTHORIZED_IPSET, "src",
+            "-j", "REJECT", "--reject-with", "tcp-reset"
+        ]
+        existe = subprocess.run(["iptables", "-C", "FORWARD"] + regra, capture_output=True)
+        if existe.returncode != 0:
+            subprocess.run(["iptables", "-D", "FORWARD"] + regra, capture_output=True)
+            subprocess.run(["iptables", "-I", "FORWARD", "2"] + regra, check=True)
+            log(f"✅ Bloqueio HTTPS ativado ({len(ips_auth)} IPs autorizados, {len(macs)} MACs)")
+        elif ips_auth:
+            log(f"🔒 HTTPS bloqueado para não-autorizados ({len(ips_auth)} autorizados na rede)")
+    except Exception as e:
+        log(f"❌ Erro bloqueio HTTPS: {e}")
 
 
 def garantir_redirect_porta_80():

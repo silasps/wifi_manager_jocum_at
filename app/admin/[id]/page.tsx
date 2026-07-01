@@ -277,6 +277,9 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [updatedVoucher, setUpdatedVoucher] = useState<Voucher | null>(null);
@@ -435,6 +438,25 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       setMessage(data.error || "Erro ao atualizar cortesia.");
     }
     setSaving(false);
+  };
+
+  const resetPassword = async () => {
+    if (!tokenRef.current || newPassword.length < 6) return;
+    setPasswordSaving(true);
+    setPasswordMsg(null);
+    const res = await fetch(`/api/admin/clients/${params.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenRef.current}` },
+      body: JSON.stringify({ senha: newPassword }),
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (data.ok) {
+      setPasswordMsg({ ok: true, text: "Senha redefinida com sucesso." });
+      setNewPassword("");
+    } else {
+      setPasswordMsg({ ok: false, text: data.error || "Erro ao redefinir senha." });
+    }
+    setPasswordSaving(false);
   };
 
   const deleteClient = async () => {
@@ -774,6 +796,34 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
               >
                 {saving ? "Salvando…" : `Alterar para ${cortesiaEdit ? "cortesia" : "pagante"}`}
               </button>
+            )}
+          </div>
+
+          <div className="admin-papel-editor" style={{ marginTop: 8 }}>
+            <label className="admin-papel-label">Redefinir senha</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="password"
+                className="admin-select"
+                placeholder="Nova senha (mín. 6 caracteres)"
+                value={newPassword}
+                onChange={(e) => { setNewPassword(e.target.value); setPasswordMsg(null); }}
+                style={{ flex: 1 }}
+              />
+              <button
+                className="admin-save-button"
+                type="button"
+                onClick={resetPassword}
+                disabled={passwordSaving || newPassword.length < 6}
+                style={{ whiteSpace: "nowrap" }}
+              >
+                {passwordSaving ? "Salvando…" : "Redefinir"}
+              </button>
+            </div>
+            {passwordMsg && (
+              <p className="admin-message" style={{ color: passwordMsg.ok ? "#4ade80" : "#f87171" }}>
+                {passwordMsg.text}
+              </p>
             )}
           </div>
 
