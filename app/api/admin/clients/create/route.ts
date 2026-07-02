@@ -6,10 +6,10 @@ export async function POST(request: Request) {
   const user = await requireAdmin(request);
   if (!user) return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
 
-  let body: { nome?: string; email?: string; senha?: string; whatsApp?: string; tipo?: string };
+  let body: { nome?: string; email?: string; senha?: string; whatsApp?: string; tipo?: string; categoria?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Corpo inválido" }, { status: 400 }); }
 
-  const { nome, email, senha, whatsApp, tipo } = body;
+  const { nome, email, senha, whatsApp, tipo, categoria } = body;
   if (!nome?.trim() || !email?.trim() || !senha) {
     return NextResponse.json({ error: "Nome, email e senha são obrigatórios." }, { status: 400 });
   }
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     email: emailNorm,
     whatsApp: whatsApp?.trim() ?? "",
     ativo: true,
-    categoria: "Obreiro",
+    categoria: categoria?.trim() || "Obreiro",
     tipo_plano: tipo === "cortesia" ? "cortesia" : "pagante",
     senha,
     papel: "user",
