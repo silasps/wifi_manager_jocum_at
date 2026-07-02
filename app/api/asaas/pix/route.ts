@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveClienteId, encodeExternalReference } from "../../../../utils/asaas/registration";
 
 type PixRequest = {
   reference?: string;
@@ -7,6 +8,13 @@ type PixRequest = {
   whatsApp?: string;
   valor?: number;
   cpf?: string;
+  categoria?: string;
+  tipoPlano?: string;
+  tempo?: string;
+  qtdPessoasMinisterio?: number;
+  senha?: string;
+  transicaoPgto?: string;
+  accessToken?: string;
 };
 
 type AsaasErrorBody = {
@@ -85,8 +93,24 @@ export async function POST(request: Request) {
   }
 
   const value = Number(Number(payload.valor || 0).toFixed(2));
-  if (!payload.nome || !payload.email || !payload.reference || value <= 0) {
+  if (!payload.nome || !payload.email || !payload.reference || !payload.tempo || value <= 0) {
     return NextResponse.json({ error: "Dados incompletos para gerar o PIX." }, { status: 400 });
+  }
+
+  let clienteId: string;
+  try {
+    clienteId = await resolveClienteId({
+      transicaoPgto: payload.transicaoPgto,
+      accessToken: payload.accessToken,
+      nome: payload.nome,
+      email: payload.email,
+      whatsApp: payload.whatsApp,
+      categoria: payload.categoria,
+      tipoPlano: payload.tipoPlano,
+      senha: payload.senha,
+    });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Não foi possível preparar o cadastro." }, { status: 400 });
   }
 
   try {
@@ -108,7 +132,7 @@ export async function POST(request: Request) {
         billingType: "PIX",
         value,
         dueDate: dueDateStr,
-        externalReference: payload.reference,
+        externalReference: encodeExternalReference(payload.reference, clienteId, payload.tempo, payload.categoria || "", payload.qtdPessoasMinisterio || 1),
         description: "Wi-Fi JOCUM AT",
       }),
     });

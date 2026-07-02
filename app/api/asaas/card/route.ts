@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveClienteId, encodeExternalReference, confirmPaidVoucher } from "../../../../utils/asaas/registration";
 
 type CardRequest = {
   reference?: string;
@@ -11,7 +12,16 @@ type CardRequest = {
   cardExpiry?: string; // "MM/AA"
   cardCvv?: string;
   cpf?: string;
+  categoria?: string;
+  tipoPlano?: string;
+  tempo?: string;
+  qtdPessoasMinisterio?: number;
+  senha?: string;
+  transicaoPgto?: string;
+  accessToken?: string;
 };
+
+const CONFIRMED_STATUSES = new Set(["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"]);
 
 type AsaasErrorBody = { errors?: Array<{ description?: string }>; message?: string };
 
@@ -59,12 +69,28 @@ export async function POST(request: Request) {
   catch { return NextResponse.json({ error: "Dados inválidos." }, { status: 400 }); }
 
   const value = Number(Number(p.valor || 0).toFixed(2));
-  if (!p.nome || !p.email || !p.reference || !p.cardNumber || !p.cardHolderName || !p.cardExpiry || !p.cardCvv || value <= 0) {
+  if (!p.nome || !p.email || !p.reference || !p.tempo || !p.cardNumber || !p.cardHolderName || !p.cardExpiry || !p.cardCvv || value <= 0) {
     return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
   }
 
   const [expMonth, expYearShort] = p.cardExpiry.split("/");
   if (!expMonth || !expYearShort) return NextResponse.json({ error: "Validade inválida." }, { status: 400 });
+
+  let clienteId: string;
+  try {
+    clienteId = await resolveClienteId({
+      transicaoPgto: p.transicaoPgto,
+      accessToken: p.accessToken,
+      nome: p.nome,
+      email: p.email,
+      whatsApp: p.whatsApp,
+      categoria: p.categoria,
+      tipoPlano: p.tipoPlano,
+      senha: p.senha,
+    });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Não foi possível preparar o cadastro." }, { status: 400 });
+  }
 
   try {
     const customerId = await findOrCreateCustomer(apiKey, p.nome, p.email, p.whatsApp, p.cpf);
@@ -78,7 +104,7 @@ export async function POST(request: Request) {
         billingType: "CREDIT_CARD",
         value,
         dueDate: today,
-        externalReference: p.reference,
+        externalReference: encodeExternalReference(p.reference, clienteId, p.tempo, p.categoria || "", p.qtdPessoasMinisterio || 1),
         description: "Wi-Fi JOCUM AT",
         creditCard: {
           holderName: p.cardHolderName.slice(0, 100),
@@ -101,6 +127,19 @@ export async function POST(request: Request) {
     const data = (await res.json()) as { id?: string; status?: string };
     if (!data.id) return NextResponse.json({ error: "Asaas não retornou ID da cobrança." }, { status: 502 });
     if (data.status === "DECLINED") return NextResponse.json({ error: "Cartão recusado. Verifique os dados e tente novamente." }, { status: 402 });
+
+    if (data.status && CONFIRMED_STATUSES.has(data.status)) {
+      await confirmPaidVoucher({
+        clienteId,
+        reference: p.reference,
+        chargeId: data.id,
+        chargeUrl: `card:${data.id}`,
+        tempo: p.tempo,
+        categoria: p.categoria,
+        qtdPessoasMinisterio: p.qtdPessoasMinisterio,
+        valor: value,
+      });
+    }
 
     return NextResponse.json({ chargeId: data.id, status: data.status });
   } catch (e) {

@@ -20,12 +20,6 @@ type SignupPayload = {
   transicao_pgto?: string;
 };
 
-type AsaasPaymentLink = {
-  id?: string;
-  reference: string;
-  url: string;
-};
-
 type PixData = {
   chargeId: string;
   qrCodeImage: string;
@@ -70,109 +64,10 @@ const [showCardForm, setShowCardForm] = useState(false);
     return () => clearTimeout(t);
   }, [countdown]);
 
-  const registerPendingAccess = async (signupPayload: SignupPayload, asaasPayment: AsaasPaymentLink) => {
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: signupPayload.email.trim(),
-      password: signupPayload.senha,
-      options: {
-        data: {
-          nome: signupPayload.nome,
-          categoria: signupPayload.categoria,
-        },
-      },
-    });
-
-    if (authError || !authData.user?.id) {
-      setMessage("Não foi possível criar o acesso. Entre em contato com a equipe.");
-      return false;
-    }
-
-    const userId = authData.user.id;
-
-    const { error: clientError } = await supabase.from("clientes").insert({
-      nome: signupPayload.nome,
-      whatsApp: signupPayload.whatsApp,
-      categoria: signupPayload.categoria,
-      ativo: true,
-      user_id: userId,
-      tipo_plano: signupPayload.tipo_plano,
-      tempo: signupPayload.tempo,
-      email: signupPayload.email,
-      aceite_de_termo: true,
-      senha: signupPayload.senha,
-    });
-
-    if (clientError) {
-      setMessage("O pagamento foi confirmado, mas não consegui finalizar o cadastro. Entre em contato com a equipe.");
-      return false;
-    }
-
-    const quota =
-      signupPayload.categoria === "Casal"
-        ? 12
-        : signupPayload.categoria === "Ministério"
-          ? 6 * (signupPayload.qtd_pessoas_ministerio || 1)
-          : 6;
-
-    const { error: voucherError } = await supabase.from("vouchers").insert({
-      cliente_id: userId,
-      status: "pendente",
-      tempo_desc: signupPayload.tempo,
-      quota,
-      qtdObreiros: signupPayload.qtd_pessoas_ministerio || 1,
-    });
-
-    const { error: financeError } = await supabase.from("financas").insert({
-      cliente_id: userId,
-      plano_escolhido: signupPayload.tempo,
-      comprovante_pgto: `${asaasPayment.reference} | ${asaasPayment.id || "asaas"} | ${asaasPayment.url}`,
-      valor_pago: signupPayload.valor,
-    });
-
-    if (voucherError || financeError) {
-      setMessage("Cadastro criado, mas houve falha ao registrar o voucher ou financeiro. Entre em contato com a equipe.");
-      return false;
-    }
-
-    return true;
-  };
-
-  const registerRenewal = async (signupPayload: SignupPayload, asaasPayment: AsaasPaymentLink) => {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      setMessage("Sessão expirada. Faça login novamente.");
-      return false;
-    }
-
-    const quota =
-      signupPayload.categoria === "Casal"
-        ? 12
-        : signupPayload.categoria === "Ministério"
-          ? 6 * (signupPayload.qtd_pessoas_ministerio || 1)
-          : 6;
-
-    const { error: voucherError } = await supabase.from("vouchers").insert({
-      cliente_id: user.id,
-      status: "pendente",
-      tempo_desc: signupPayload.tempo,
-      quota,
-      qtdObreiros: signupPayload.qtd_pessoas_ministerio || 1,
-    });
-
-    const { error: financeError } = await supabase.from("financas").insert({
-      cliente_id: user.id,
-      plano_escolhido: signupPayload.tempo,
-      comprovante_pgto: `${asaasPayment.reference} | ${asaasPayment.id || "asaas"} | ${asaasPayment.url}`,
-      valor_pago: signupPayload.valor,
-    });
-
-    if (voucherError || financeError) {
-      setMessage("Falha ao registrar voucher ou financeiro. Entre em contato com a equipe.");
-      return false;
-    }
-
-    return true;
-  };
+  // Nota: cadastro (usuário/cliente), voucher e financeiro agora são criados no servidor
+  // (rotas /api/asaas/pix e /api/asaas/card + webhook /api/asaas/webhook), não mais aqui no
+  // navegador. Isso evita que o registro se perca se a aba for fechada/for para segundo plano
+  // durante o pagamento (ex: usuário abre o app do banco pra pagar o PIX).
 
   // Poll for PIX payment confirmation
   useEffect(() => {
@@ -186,18 +81,8 @@ const [showCardForm, setShowCardForm] = useState(false);
         const data = (await res.json()) as { status?: string };
         if (cancelled) return;
         if (data.status === "RECEIVED" || data.status === "CONFIRMED" || data.status === "RECEIVED_IN_CASH") {
-          const currentPayload = JSON.parse(sessionStorage.getItem("wf_signup") || "null") as SignupPayload | null;
-          const storedAsaas = sessionStorage.getItem("wf_asaas");
-
-          if (!currentPayload || !storedAsaas) {
-            setMessage("Pagamento confirmado! Entre em contato com a equipe para ativar o acesso.");
-            return;
-          }
-
-          const asaasData = JSON.parse(storedAsaas) as AsaasPaymentLink;
-          const register = currentPayload.transicao_pgto === "renovacao" ? registerRenewal : registerPendingAccess;
-          const ok = await register(currentPayload, asaasData);
-          if (ok && !cancelled) {
+          // O voucher já foi criado no servidor (webhook do Asaas). Aqui só refletimos na UI.
+          if (!cancelled) {
             sessionStorage.removeItem("wf_signup");
             sessionStorage.removeItem("wf_asaas");
             setCountdown(20);
@@ -219,27 +104,9 @@ const [showCardForm, setShowCardForm] = useState(false);
     const params = new URLSearchParams(window.location.search);
 
     if (params.get("asaas") === "success") {
-      const storedSignup = sessionStorage.getItem("wf_signup");
-      const storedAsaas = sessionStorage.getItem("wf_asaas");
-
-      if (storedSignup && storedAsaas) {
-        try {
-          const signupData = JSON.parse(storedSignup) as SignupPayload;
-          const asaasData = JSON.parse(storedAsaas) as AsaasPaymentLink;
-
-          const register = signupData.transicao_pgto === "renovacao" ? registerRenewal : registerPendingAccess;
-          void register(signupData, asaasData).then((ok) => {
-            if (ok) {
-              sessionStorage.removeItem("wf_signup");
-              sessionStorage.removeItem("wf_asaas");
-            }
-          });
-        } catch {
-          sessionStorage.removeItem("wf_signup");
-          sessionStorage.removeItem("wf_asaas");
-        }
-      }
-
+      // O voucher já foi criado no servidor (webhook do Asaas). Aqui só refletimos na UI.
+      sessionStorage.removeItem("wf_signup");
+      sessionStorage.removeItem("wf_asaas");
       setCountdown(20);
       return;
     }
@@ -285,6 +152,7 @@ const [showCardForm, setShowCardForm] = useState(false);
     setMessage(null);
 
     const reference = createPaymentReference();
+    const accessToken = payload.transicao_pgto === "renovacao" ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
 
     if (paymentMethod === "PIX") {
       const response = await fetch("/api/asaas/pix", {
@@ -296,6 +164,13 @@ const [showCardForm, setShowCardForm] = useState(false);
           email: payload.email,
           whatsApp: payload.whatsApp,
           valor: payload.valor,
+          categoria: payload.categoria,
+          tipoPlano: payload.tipo_plano,
+          tempo: payload.tempo,
+          qtdPessoasMinisterio: payload.qtd_pessoas_ministerio,
+          senha: payload.senha,
+          transicaoPgto: payload.transicao_pgto,
+          accessToken,
         }),
       });
 
@@ -336,6 +211,7 @@ const [showCardForm, setShowCardForm] = useState(false);
     setMessage(null);
 
     const reference = sessionStorage.getItem("wf_card_ref") || createPaymentReference();
+    const accessToken = payload.transicao_pgto === "renovacao" ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
 
     const response = await fetch("/api/asaas/card", {
       method: "POST",
@@ -346,6 +222,13 @@ const [showCardForm, setShowCardForm] = useState(false);
         email: payload.email,
         whatsApp: payload.whatsApp,
         valor: payload.valor,
+        categoria: payload.categoria,
+        tipoPlano: payload.tipo_plano,
+        tempo: payload.tempo,
+        qtdPessoasMinisterio: payload.qtd_pessoas_ministerio,
+        senha: payload.senha,
+        transicaoPgto: payload.transicao_pgto,
+        accessToken,
         cardNumber: cardData.number,
         cardHolderName: cardData.holderName,
         cardExpiry: cardData.expiry,
@@ -362,14 +245,10 @@ const [showCardForm, setShowCardForm] = useState(false);
       return;
     }
 
-    const asaasData: AsaasPaymentLink = { id: data.chargeId, url: `card:${data.chargeId}`, reference };
-    const register = payload.transicao_pgto === "renovacao" ? registerRenewal : registerPendingAccess;
-    const ok = await register(payload, asaasData);
-    if (ok) {
-      sessionStorage.removeItem("wf_signup");
-      sessionStorage.removeItem("wf_card_ref");
-      setCountdown(20);
-    }
+    // O servidor já criou/confirmou o voucher (síncrono para cartão, ou via webhook em seguida).
+    sessionStorage.removeItem("wf_signup");
+    sessionStorage.removeItem("wf_card_ref");
+    setCountdown(20);
     setLoading(false);
   };
 
