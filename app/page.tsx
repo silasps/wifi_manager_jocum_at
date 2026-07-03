@@ -5,7 +5,7 @@ import { supabase } from "../utils/supabase/client";
 
 type Tab = "login" | "signup";
 type Category = "Obreiro" | "Aluno" | "Casal" | "Ministério" | "";
-type Plan = "Diário" | "Mensal" | "Anual" | "";
+type Plan = "Diário" | "Quinzenal" | "Mensal" | "Anual" | "";
 type DdiOption = {
   code: string;
   flag: string;
@@ -34,7 +34,8 @@ const ddiOptions: DdiOption[] = [
 ];
 const categories: Category[] = ["Obreiro", "Aluno", "Casal", "Ministério"];
 const accessPlans: Array<{ value: Exclude<Plan, "">; title: string; description: string; unit: string }> = [
-  { value: "Diário", title: "Por dias", description: "Para visitas e períodos curtos", unit: "dias" },
+  { value: "Diário", title: "Por dias", description: "Para visitas curtas, até 14 dias", unit: "dias" },
+  { value: "Quinzenal", title: "15 dias", description: "Pacote fechado para quem fica ~2 semanas", unit: "dias" },
   { value: "Mensal", title: "Por meses", description: "Para uma temporada na base", unit: "meses" },
   { value: "Anual", title: "Por anos", description: "Para acesso de longo prazo", unit: "anos" },
 ];
@@ -44,12 +45,14 @@ const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL
 function timeLabel(plan: Plan, amount: string) {
   const value = Number(amount || 1);
   if (plan === "Diário") return value === 1 ? "1 dia" : `${value} dias`;
+  if (plan === "Quinzenal") return "15 dias";
   if (plan === "Anual") return value === 1 ? "1 ano" : `${value} anos`;
   return value === 1 ? "1 mês" : `${value} meses`;
 }
 
 function durationLabel(plan: Plan) {
   if (plan === "Diário") return "Quantos dias de acesso?";
+  if (plan === "Quinzenal") return "Duração fixa";
   if (plan === "Anual") return "Quantos anos de acesso?";
   if (plan === "Mensal") return "Quantos meses de acesso?";
   return "Duração do acesso";
@@ -58,6 +61,7 @@ function durationLabel(plan: Plan) {
 function durationUnit(plan: Plan, value?: string) {
   const n = Number(value || 0);
   if (plan === "Diário") return n === 1 ? "dia" : "dias";
+  if (plan === "Quinzenal") return "dias";
   if (plan === "Mensal") return n === 1 ? "mês" : "meses";
   if (plan === "Anual") return n === 1 ? "ano" : "anos";
   return "tempo";
@@ -67,21 +71,23 @@ function dailyUnitValue(category: Category) {
   return category === "Casal" ? 5 : 3;
 }
 
-function dailySeasonPrice(days: number, category: Category) {
-  const full = days * dailyUnitValue(category);
-  if (days >= 20) return Math.min(full, 50);
-  if (days >= 15) return Math.min(full, 40);
-  return full;
+// Preço fechado dos 15 dias — sempre menor que o mensal da mesma categoria (mensal - R$10),
+// pra régua de preços fazer sentido (Diário < Quinzenal < Mensal < Anual, sem inversão).
+function quinzenalPrice(category: Category) {
+  if (category === "Casal" || category === "Ministério") return 40;
+  if (category === "Aluno") return 25;
+  return 20;
 }
 
 function planDiscountHint(category: Category, plan: Plan, amount: string) {
   const tempo = Number(amount || 0);
 
-  if (plan === "Diário") {
-    if (!tempo) return "desconto a partir de 15 dias";
-    if (tempo >= 20) return "curta temporada R$ 50";
-    if (tempo >= 15) return "curta temporada R$ 40";
-    return "desconto a partir de 15 dias";
+  if (plan === "Diário") return "até 14 dias";
+  if (plan === "Quinzenal") {
+    const full = 15 * dailyUnitValue(category);
+    const price = quinzenalPrice(category);
+    const pct = full > 0 ? Math.round((1 - price / full) * 100) : 0;
+    return pct > 0 ? `economize ${pct}%` : "";
   }
   if (plan === "Anual") return category === "Ministério" ? "25% off na base" : "10% off";
   if (plan !== "Mensal") return "";
@@ -112,6 +118,7 @@ function planDiscountHint(category: Category, plan: Plan, amount: string) {
 
 function planUnitValue(category: Category, plan: Plan) {
   if (plan === "Diário") return `${money.format(dailyUnitValue(category))} / dia`;
+  if (plan === "Quinzenal") return `${money.format(quinzenalPrice(category) / 15)} / dia`;
   if (plan === "Anual") {
     if (category === "Ministério") return `${money.format(50 * 12 * 0.75)} / ano base`;
     if (category === "Aluno") return `${money.format(35 * 12 * 0.9)} / ano`;
@@ -131,11 +138,19 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
   let original = 0;
   let final = 0;
 
-  if (!category || !plan || !tempo) return { original, final, discount: 0 };
+  if (!category || !plan) return { original, final, discount: 0 };
+
+  if (plan === "Quinzenal") {
+    original = 15 * dailyUnitValue(category);
+    final = quinzenalPrice(category);
+    return { original, final, discount: Math.max(0, original - final) };
+  }
+
+  if (!tempo) return { original, final, discount: 0 };
 
   if (plan === "Diário") {
     original = tempo * dailyUnitValue(category);
-    final = dailySeasonPrice(tempo, category);
+    final = original;
   } else if (plan === "Mensal") {
     if (category === "Aluno") original = tempo * 35;
     if (category === "Obreiro") original = tempo * 30;
@@ -305,7 +320,7 @@ export default function Home() {
         next.name = "";
         next.ministryPeople = "";
       }
-      if (field === "plan") next.time = value === "Diário" ? "2" : "1";
+      if (field === "plan") next.time = value === "Diário" ? "2" : value === "Quinzenal" ? "15" : "1";
       return next;
     });
   };
@@ -412,6 +427,7 @@ export default function Home() {
       [!signup.plan, "Escolha o tempo de acesso desejado."],
       [!signup.time, "Informe a duração do acesso."],
       [signup.plan === "Diário" && Number(signup.time) < 2, "O plano diário aceita no mínimo 2 dias."],
+      [signup.plan === "Diário" && Number(signup.time) > 14, "O plano diário vale até 14 dias — para mais tempo, use o pacote de 15 dias."],
       [!isValidEmail(signup.email.trim()), "Informe um email válido."],
       [!signup.password, "Defina uma senha."],
       [signup.password !== signup.confirmPassword, "As senhas precisam ser iguais."],
@@ -615,10 +631,12 @@ export default function Home() {
                     onChange={(event) => updateSignup("time", onlyDigits(event.target.value).slice(0, 3))}
                     onBlur={() => {
                       if (signup.plan === "Diário" && Number(signup.time) < 2) updateSignup("time", "2");
+                      if (signup.plan === "Diário" && Number(signup.time) > 14) updateSignup("time", "14");
                     }}
                     inputMode="numeric"
                     min={signup.plan === "Diário" ? 2 : 1}
-                    disabled={!signup.plan}
+                    max={signup.plan === "Diário" ? 14 : undefined}
+                    disabled={!signup.plan || signup.plan === "Quinzenal"}
                     required
                   />
                   <span>{durationUnit(signup.plan, signup.time)}</span>
