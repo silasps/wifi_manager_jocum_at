@@ -4254,4 +4254,119 @@ input:disabled {
   text-decoration: none;
 }
 
+/* ─── Admin: Financeiro ─── */
+
+.admin-fin-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 16px;
+  flex-wrap: wrap;
+}
+
+.admin-fin-periodo {
+  flex: 1;
+  min-width: 160px;
+}
+
+.admin-fin-export-group {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-fin-export-btn {
+  padding: 9px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff7ef;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-fin-export-btn:hover:not(:disabled) {
+  border-color: rgba(255, 121, 42, 0.6);
+  color: #ff792a;
+}
+
+.admin-fin-export-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.admin-fin-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+@media (min-width: 700px) {
+  .admin-fin-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.admin-fin-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-fin-tile span {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.admin-fin-tile strong {
+  font-size: 1.15rem;
+  color: #fff7ef;
+}
+
+.admin-fin-tile small {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.admin-fin-up { color: #4ade80; }
+.admin-fin-down { color: #f87171; }
+
+.admin-fin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.admin-fin-table th,
+.admin-fin-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.admin-fin-table th {
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.admin-fin-table td {
+  color: #fff7ef;
+}
+
+.admin-fin-row-best td {
+  background: rgba(74, 222, 128, 0.06);
+}
+
 .hsp-upgrade-link:hover { text-decoration: underline; }

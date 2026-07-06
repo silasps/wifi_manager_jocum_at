@@ -93,24 +93,32 @@ export async function POST(request: Request) {
   }
 
   const value = Number(Number(payload.valor || 0).toFixed(2));
-  if (!payload.nome || !payload.email || !payload.reference || !payload.tempo || value <= 0) {
+  if (!payload.nome || !payload.email || !payload.reference || value <= 0) {
     return NextResponse.json({ error: "Dados incompletos para gerar o PIX." }, { status: 400 });
   }
 
-  let clienteId: string;
-  try {
-    clienteId = await resolveClienteId({
-      transicaoPgto: payload.transicaoPgto,
-      accessToken: payload.accessToken,
-      nome: payload.nome,
-      email: payload.email,
-      whatsApp: payload.whatsApp,
-      categoria: payload.categoria,
-      tipoPlano: payload.tipoPlano,
-      senha: payload.senha,
-    });
-  } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Não foi possível preparar o cadastro." }, { status: 400 });
+  // "tempo" só vem do fluxo de pagamento público (novo cadastro/renovação) — é o que aciona
+  // a criação antecipada do cliente + o webhook do Asaas. Fluxos do admin (criar voucher pra
+  // cliente existente, ou o combo cliente+voucher) não mandam "tempo": eles já cuidam da
+  // criação do voucher por conta própria depois de confirmar o pagamento, então aqui só
+  // geramos a cobrança normalmente, como sempre funcionou.
+  let externalReference = payload.reference;
+  if (payload.tempo) {
+    try {
+      const clienteId = await resolveClienteId({
+        transicaoPgto: payload.transicaoPgto,
+        accessToken: payload.accessToken,
+        nome: payload.nome,
+        email: payload.email,
+        whatsApp: payload.whatsApp,
+        categoria: payload.categoria,
+        tipoPlano: payload.tipoPlano,
+        senha: payload.senha,
+      });
+      externalReference = encodeExternalReference(payload.reference, clienteId, payload.tempo, payload.categoria || "", payload.qtdPessoasMinisterio || 1);
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "Não foi possível preparar o cadastro." }, { status: 400 });
+    }
   }
 
   try {
@@ -132,7 +140,7 @@ export async function POST(request: Request) {
         billingType: "PIX",
         value,
         dueDate: dueDateStr,
-        externalReference: encodeExternalReference(payload.reference, clienteId, payload.tempo, payload.categoria || "", payload.qtdPessoasMinisterio || 1),
+        externalReference,
         description: "Wi-Fi JOCUM AT",
       }),
     });

@@ -313,6 +313,7 @@ export default function AdminVouchersPage() {
         <div className="admin-nav-tabs">
           <a href="/admin" className="admin-nav-tab">Clientes</a>
           <span className="admin-nav-tab active">Vouchers</span>
+          <a href="/admin/financeiro" className="admin-nav-tab">Financeiro</a>
         </div>
       </header>
 
