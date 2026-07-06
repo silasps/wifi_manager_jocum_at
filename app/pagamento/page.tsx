@@ -74,6 +74,7 @@ const [showCardForm, setShowCardForm] = useState(false);
     if (!pixData) return;
 
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const poll = async () => {
       try {
@@ -82,21 +83,22 @@ const [showCardForm, setShowCardForm] = useState(false);
         if (cancelled) return;
         if (data.status === "RECEIVED" || data.status === "CONFIRMED" || data.status === "RECEIVED_IN_CASH") {
           // O voucher já foi criado no servidor (webhook do Asaas). Aqui só refletimos na UI.
-          if (!cancelled) {
-            sessionStorage.removeItem("wf_signup");
-            sessionStorage.removeItem("wf_asaas");
-            setCountdown(20);
-          }
+          cancelled = true;
+          if (interval) clearInterval(interval);
+          sessionStorage.removeItem("wf_signup");
+          sessionStorage.removeItem("wf_asaas");
+          setPixData(null);
+          setCountdown(20);
         }
       } catch {
         // ignore transient polling errors
       }
     };
 
-    const interval = setInterval(() => { void poll(); }, 5000);
+    interval = setInterval(() => { void poll(); }, 5000);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
   }, [pixData]); // eslint-disable-line react-hooks/exhaustive-deps
 
