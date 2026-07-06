@@ -150,6 +150,12 @@ Necessários para que a página do portal e autenticação funcionem:
 — Estes precisam ser INTERCEPTADOS pelo redirect para que o popup apareça.
 — O redirect server retorna respostas específicas por SO (NCSI) para fechar o captive portal corretamente.
 
+**⚠️ NÃO incluir `gstatic.com` (domínio bare) no walled garden:**
+Os IPs resolvidos para `gstatic.com` são anycast e cobrem o mesmo range de `connectivitycheck.gstatic.com`.
+Se `gstatic.com` entrar no ipset `walled_garden`, a probe de captive detection do Android e LG webOS passará
+direto (HTTPS bem-sucedido), o dispositivo achará que tem internet, e o popup/CNA nunca abrirá.
+Manter apenas: `ssl.gstatic.com`, `www.gstatic.com`, `fonts.gstatic.com`.
+
 ---
 
 ## API Endpoints
@@ -230,6 +236,9 @@ Necessários para que a página do portal e autenticação funcionem:
 **Nota:** A API key configurada (`UNIFI_API_KEY`) tem permissão para `POST .../actions` mas não para
 listar clientes por MAC (`GET .../clients?filter=...`). Isso é normal — o MongoDB sempre funciona como
 fallback confiável para todos os casos.
+
+**⚠️ API key atual (`HgTTzA_MRl6eAlOBEpUbhkUzKCC0EpEx`) retorna 401 (expirada).** O MongoDB direto
+garante que todas as autorizações e revogações funcionem. Renovar a key no UniFi Console quando possível.
 
 ### Revogação (`kick_mac_unifi`)
 1. Remove bypass iptables do MAC
@@ -314,21 +323,45 @@ Visitantes anônimos (acesso gratuito). Campos: `id`, `mac_address`, `telefone`,
 ```bash
 #!/bin/sh
 export SUPABASE_SERVICE_ROLE_KEY="<chave>"
-cd /data/scripts && python3 udm_agent.py
+cd /data/scripts && python3 -u udm_agent.py
 ```
 
-### Crontab (auto-restart no boot + crash recovery)
-```
-@reboot while true; do /data/scripts/start_agent.sh >> /data/scripts/voucher.log 2>&1; sleep 5; done
+O flag `-u` é obrigatório para log imediato (sem buffering). Sem ele, logs podem atrasar vários minutos.
+
+### Serviço systemd (`/etc/systemd/system/udm-agent.service`)
+```ini
+[Unit]
+Description=UDM Agent - Vouchers e Portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /data/scripts/start_agent.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:/data/scripts/agent.log
+StandardError=append:/data/scripts/agent.log
+WorkingDirectory=/data/scripts
 ```
 
-**⚠️ Importante:** O crontab deve chamar `start_agent.sh` (não `python3 udm_agent.py` diretamente).
+```bash
+# Habilitar e iniciar o serviço
+systemctl enable udm-agent
+systemctl start udm-agent
+```
+
+**Log principal:** `/data/scripts/agent.log` (systemd captura stdout/stderr do processo).
+
+**⚠️ Importante:** O systemd deve executar `start_agent.sh` (não `python3 udm_agent.py` diretamente).
 `start_agent.sh` exporta `SUPABASE_SERVICE_ROLE_KEY` — sem esse passo o agent inicia com a variável
-vazia e todas as chamadas ao Supabase retornam `401 No API key found`. O redirecionamento `>> voucher.log`
-também é essencial para o loop `while true` não engolir erros silenciosamente.
+vazia e todas as chamadas ao Supabase retornam `401 No API key found`.
 
 ### Verificação rápida
 ```bash
+# Status do serviço
+systemctl status udm-agent
+
 # Agent rodando?
 ps aux | grep udm_agent | grep -v grep
 
@@ -338,8 +371,8 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8881/
 # Regras iptables corretas?
 iptables -t nat -L PREROUTING -n --line-numbers | head -6
 
-# Log sem erros?
-tail -20 /data/scripts/voucher.log
+# Log em tempo real
+tail -f /data/scripts/agent.log
 ```
 
 ---
@@ -369,24 +402,25 @@ iOS/Android usam MACs aleatórios. A API UniFi não enxerga esses MACs. O agent 
 
 ### Agent travado sem processar autorizações (RESOLVIDO)
 **Sintoma:** Autorizações ficam em `status: "pendente"` por mais de 1 minuto; frontend mostra "Liberando acesso..." indefinidamente.
-**Causa A — Processo iniciado sem `start_agent.sh`:** Se o agente for iniciado diretamente com `python3 udm_agent.py` sem passar pelo `start_agent.sh`, a `SUPABASE_SERVICE_ROLE_KEY` fica vazia. Todas as chamadas ao Supabase retornam `401 No API key found`. O loop continua rodando mas nunca processa nada. Crontab com auto-restart não detecta (processo não cai — só fica inoperante).
+**Causa A — Processo iniciado sem `start_agent.sh`:** Se o agente for iniciado diretamente com `python3 udm_agent.py` sem passar pelo `start_agent.sh`, a `SUPABASE_SERVICE_ROLE_KEY` fica vazia. Todas as chamadas ao Supabase retornam `401 No API key found`. O loop continua rodando mas nunca processa nada.
 **Causa B — Conexão HTTPS sem timeout:** Chamadas ao Supabase sem `timeout=` param bloqueiam indefinidamente em caso de instabilidade de rede, travando o loop principal (thread única). O processo aparece "vivo" mas não responde.
-**Fix aplicado:** Todas as `http.client.HTTPSConnection(SUPABASE_URL, ...)` agora têm `timeout=10`. Crontab corrigido para usar `start_agent.sh`.
+**Causa C — Python sem `-u`:** Sem o flag de unbuffered output, logs podem demorar minutos para aparecer, dificultando o diagnóstico.
+**Fix aplicado:** Todas as `http.client.HTTPSConnection(SUPABASE_URL, ...)` agora têm `timeout=10`. Systemd configurado para usar `start_agent.sh` com `python3 -u`.
 **Diagnóstico rápido:**
 ```bash
 # Autorizações presas?
-# (Via Supabase REST — substitua URL e KEY)
 curl -s ".../rest/v1/autorizacoes?status=eq.pendente" -H "apikey: ..." | python3 -m json.tool
 
 # Agent rodando?
+systemctl status udm-agent
 ps aux | grep udm_agent | grep -v grep
 
 # Log mostra 401?
-tail -20 /data/scripts/voucher.log | grep "401\|Erro"
+tail -20 /data/scripts/agent.log | grep "401\|Erro"
 
-# Solução: matar processo e reiniciar via start_agent.sh
-pkill -f udm_agent.py
-cd /data/scripts && nohup ./start_agent.sh >> /data/scripts/voucher.log 2>&1 & disown
+# Solução: reiniciar via systemd
+systemctl restart udm-agent
+tail -f /data/scripts/agent.log
 ```
 
 ### Windows NCSI — "Sem internet" após autenticação (RESOLVIDO)
@@ -399,8 +433,26 @@ Sem a resposta correta, o ícone de rede mostra "sem internet" e apps como Spoti
 **Escopo das regras:** Todas as regras iptables usam `-i br0`. As outras redes (`br2`) não são afetadas.
 Para verificar: `iptables -t nat -S PREROUTING | grep -v br0` — deve retornar apenas regras UBIOS nativas.
 
+### Bloqueio HTTPS para guests — NÃO FAZER sem VLAN separada
+
+**Tentativa e resultado (2026-07-01):** Foi adicionada uma função `aplicar_bloqueio_https()` que
+mantinha um ipset `hotspot_authorized` e adicionava regra FORWARD REJECT para porta 443 de MACs
+não autorizados. O objetivo era forçar o webOS da LG a detectar o captive portal.
+
+**Problema:** `br0` = `10.70.0.0/21` cobre **todos** os dispositivos: guests, admin e o próprio Mac
+do administrador. O Mac do admin (`46:f9:f9:e0:e9:d3`, 10.70.4.129) não estava no ipset
+`hotspot_authorized` (nunca autorizou via sistema de vouchers). Resultado: HTTPS bloqueado para
+todos, incluindo admin. Internet caiu para todos.
+
+**Recuperação:** `iptables -D FORWARD -p tcp --dport 443 -m set ! --match-set hotspot_authorized src -j REJECT --reject-with tcp-reset`
+
+**Lição:** Não inserir regras HTTPS no FORWARD sem primeiro garantir que admin está em VLAN separada
+(`br2`, `br3`) ou implementar um bypass list com os MACs admin conhecidos **antes** de ativar a regra.
+
+A função `aplicar_bloqueio_https()` existe no código mas **não é chamada** no loop principal.
+
 ### Após atualização de firmware da UDM
-Verificar: agent rodando, crontab existente, regras iptables no lugar, `redirect_https: false`.
+Verificar: agent rodando, serviço systemd ativo (`systemctl status udm-agent`), regras iptables no lugar, `redirect_https: false`.
 
 ---
 
@@ -414,11 +466,21 @@ Smart TVs **não abrem browser automaticamente** ao conectar. Em vez disso, o SO
 
 1. TV conecta → SO faz probe HTTP (ex: `/h`, `/generate_204`)
 2. Agent detecta User-Agent de TV (`_is_tv()`)
-3. Para **probes** → 302 para `http://10.70.0.1/tv?id=<MAC>` — força CNA a abrir browser embutido
-4. Browser da TV exibe página com PIN de 6 dígitos
-5. Usuário digita o PIN no celular via portal web
+3. Para **probes** ou **redirects `/guest/s/default/`** → 302 para `http://10.70.0.1/tv?id=<MAC>` — força CNA a abrir browser embutido
+4. Browser da TV exibe página com PIN de 6 dígitos (`_TV_PIN_HTML`, auto-refresh 5s)
+5. Usuário digita o PIN no celular via portal web (`wifi-manager-react.vercel.app` → "Conectar TV")
 6. Agent autoriza o MAC no MongoDB
-7. TV reconecta — agora flui pelo caminho de TV autorizada
+7. TV reconecta — próximo meta-refresh mostra `_TV_CONNECTED_HTML` ("TV Conectada!")
+8. TV segue pelo caminho de TV autorizada
+
+**Status por plataforma (testado em produção, 2026-07-01):**
+
+| Plataforma | Fluxo automático | Observação |
+|---|---|---|
+| Samsung Tizen | ✅ Totalmente automático | CNA abre sozinha, PIN aparece na TV |
+| Amazon Fire TV | ✅ Quase automático | Requer pressionar OK no controle para abrir Silk browser |
+| LG webOS | ⚠️ Parcialmente automático | Ver limitação abaixo |
+| Android TV / Google TV | ✅ Automático (Android CNA padrão) | `/generate_204` interceptado normalmente |
 
 ### TV **autorizada** — Fluxo de probes
 
@@ -462,6 +524,25 @@ Quando o cliente usa roteador próprio em modo repetidor/NAT entre a TV e a UDM:
 
 User-Agent contendo qualquer um dos termos detecta TV e ativa o fluxo PIN:
 `smarttv`, `smart-tv`, `tizen`, `webos`, `web0s`, `netcast`, `roku`, `appletv`, `bravia`, `androidtv`, `chromecast`, `crkey`, `aftm`, `afts`, `aftt`, `aftb`, `aftmm`, `vizio`, `hbbtv`, `philipstv`, `nettv`, `playstation`, `xbox`, `nintendo`, `lg browser`, `googletv`, `google tv`, `vidaa`, `foxxum`, `orsay`, `firetv`, `fire tv`, `amazontv`, `semp`, `philco`
+
+### LG webOS — Limitação do Background Content Loader
+
+O webOS usa dois mecanismos distintos:
+1. **CNA interativo** — abre browser embutido quando detecta captive portal via `/generate_204` ou `/cs/`. Só roda na primeira conexão ou se o cache expirar.
+2. **Background content loader** — faz requests HTTP periódicos via `/guest/s/default/?id=<mac>&url=<url>` para carregar thumbnails do LG Channels. **Ignora HTML** (espera dados de imagem). Nosso agent detecta esse path e redireciona para a página de PIN, mas o background loader descarta a resposta.
+
+**Resultado:** Se a TV já esteve na rede antes e o webOS cached o estado "conectado", o CNA não roda de novo automaticamente. O background loader cicla continuamente mas nunca abre o browser.
+
+**Workaround para o cliente:** Abrir o app "Navegador" da LG (Home → Todos os Apps → Navegador), digitar qualquer URL HTTP (`http://conectar.tv` ou similar) na barra de endereço. O browser interativo faz request HTTP → iptables intercepta → agent serve a página de PIN.
+
+**Solução definitiva (não implementada):** Bloquear HTTPS seletivamente para guests não autorizados forçaria o webOS a detectar o captive portal. Porém, na topologia atual (`br0` cobre admin e guests na mesma bridge), qualquer regra de bloqueio HTTPS afeta todos os dispositivos. Requer VLAN separada de gerência ou bypass list por MAC de admin.
+
+### Amazon Fire TV Stick
+
+- `_TV_KEYWORDS` inclui `aftm, afts, aftt, aftb, aftmm` (códigos de modelo Fire TV)
+- `_PROBE_DISPATCH` inclui `/kindle-wifi/wifistub.html`
+- Quando ligar: detecta captive portal → mostra "Entrar na rede" na tela → usuário pressiona OK no controle → Silk browser abre com tela de PIN
+- **Fluxo do PIN confirmado em produção:** PIN `524104` gerado para MAC `b8:5f:98:28:34:91` (AFTSS)
 
 ### Por que Netflix funciona mas YouTube/Amazon/Disney não (sem proxy)
 
