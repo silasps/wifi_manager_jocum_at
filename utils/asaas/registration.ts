@@ -11,17 +11,29 @@ export type ResolveClienteInput = {
   senha?: string;
 };
 
+// O endpoint /auth/v1/admin/users ignora o filtro "email" nesta instância do Supabase
+// (retorna a lista completa, mais recentes primeiro) — por isso é obrigatório filtrar
+// pelo email exato no cliente. Sem esse filtro, o código pegava o usuário mais recente
+// do sistema inteiro e reaproveitava o id/senha dele por engano.
 async function findAuthUserIdByEmail(email: string): Promise<string | undefined> {
-  const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`;
-  const res = await fetch(url, {
-    headers: {
-      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-    },
-  });
-  if (!res.ok) return undefined;
-  const body = (await res.json()) as { users?: Array<{ id: string }> };
-  return body.users?.[0]?.id;
+  const target = email.trim().toLowerCase();
+  const perPage = 200;
+  for (let page = 1; page <= 10; page++) {
+    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?page=${page}&per_page=${perPage}`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    });
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as { users?: Array<{ id: string; email?: string }> };
+    const users = body.users ?? [];
+    const match = users.find((u) => u.email?.trim().toLowerCase() === target);
+    if (match) return match.id;
+    if (users.length < perPage) return undefined;
+  }
+  return undefined;
 }
 
 // Resolve (e cria, se necessário) o cliente ANTES do pagamento ser confirmado.
@@ -49,12 +61,15 @@ export async function resolveClienteId(input: ResolveClienteInput): Promise<stri
   });
 
   let userId = authData?.user?.id;
+  let createdFreshUser = Boolean(userId);
 
   if (authError || !userId) {
-    // Pode já existir no Supabase Auth sem registro em "clientes" (cadastro órfão de tentativa anterior)
+    // Só reaproveita um usuário existente se o email dele bater exatamente —
+    // caso contrário, é um erro real de criação e não deve ser mascarado.
     const found = await findAuthUserIdByEmail(emailNorm);
     if (!found) throw new Error(authError?.message || "Não foi possível criar o acesso.");
     userId = found;
+    createdFreshUser = false;
     await admin.auth.admin.updateUserById(userId, { email_confirm: true, password: input.senha || undefined });
   }
 
@@ -71,7 +86,11 @@ export async function resolveClienteId(input: ResolveClienteInput): Promise<stri
     papel: "user",
   });
 
-  if (clientError) throw new Error("Não foi possível finalizar o cadastro.");
+  if (clientError) {
+    // Só remove o usuário Auth se foi criado agora — nunca apaga uma conta pré-existente.
+    if (createdFreshUser) await admin.auth.admin.deleteUser(userId);
+    throw new Error("Não foi possível finalizar o cadastro.");
+  }
 
   return userId;
 }
