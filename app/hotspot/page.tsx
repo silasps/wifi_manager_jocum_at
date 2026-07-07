@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../utils/supabase/client";
+import { captiveNavigate } from "../../utils/captive/navigate";
 
 // Armazena a sessão diretamente no localStorage para evitar chamada de rede ao supabase.co
 // (o portal cativo bloqueia conexões diretas ao Supabase no browser)
@@ -503,7 +504,13 @@ export default function HotspotPage() {
             <div className="hsp-upgrade-banner" role="complementary" aria-label="Sugestão de upgrade">
               <p className="hsp-upgrade-title">Conectado ao Wi-Fi gratuito</p>
               <p className="hsp-upgrade-desc">Quer streaming, videochamadas e mais velocidade?</p>
-              <a href="/?tab=signup&from=portal" className="hsp-upgrade-link">Fazer upgrade →</a>
+              <a
+                href="/?tab=signup&from=portal"
+                className="hsp-upgrade-link"
+                onClick={(e) => { e.preventDefault(); captiveNavigate("/?tab=signup&from=portal"); }}
+              >
+                Fazer upgrade →
+              </a>
             </div>
           )}
           <p className="hsp-success-countdown">Redirecionando em {countdown}s…</p>
@@ -534,7 +541,22 @@ export default function HotspotPage() {
           <img src="/brand/logo-at-symbol.png" alt="JOCUM AT" className="hsp-center-logo" style={{ filter: "brightness(0) invert(1)" }} />
           <p className="hsp-center-title">{userName ? `Olá, ${userName}.` : "Acesso encerrado."}</p>
           <p className="hsp-center-sub">Seu acesso expirou.</p>
-          <a href="/renovacao" className="hotspot-cta-primary" style={{ marginTop: 8 }}>Renovar ou fazer upgrade</a>
+          <a
+            href="/renovacao"
+            className="hotspot-cta-primary"
+            style={{ marginTop: 8 }}
+            onClick={(e) => { e.preventDefault(); captiveNavigate("/renovacao"); }}
+          >
+            Renovar ou fazer upgrade
+          </a>
+          <button
+            type="button"
+            className="hotspot-cta-secondary"
+            style={{ marginTop: 8 }}
+            onClick={() => void checkAuth(mac)}
+          >
+            Já paguei, verificar novamente
+          </button>
           <button
             type="button"
             className="hotspot-cta-secondary"
@@ -715,7 +737,7 @@ export default function HotspotPage() {
             type="button"
             className="hotspot-cta-primary"
             style={{ fontSize: "0.9rem", minHeight: 48 }}
-            onClick={() => { window.location.href = "/?tab=signup&from=portal"; }}
+            onClick={() => captiveNavigate("/?tab=signup&from=portal")}
           >
             Ver planos premium
           </button>
