@@ -17,12 +17,27 @@ export async function POST(request: Request) {
   const { data: { user }, error: userError } = await supabase.auth.getUser(token);
   if (userError || !user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
+  let mac: string | undefined;
+  try {
+    const body = await request.json();
+    mac = typeof body?.mac === "string" ? body.mac.toLowerCase().trim() : undefined;
+  } catch {
+    mac = undefined;
+  }
+
+  if (!mac) {
+    // Sem o MAC do dispositivo atual não dá pra saber qual visitante é o "meu" dentro do
+    // acesso gratuito compartilhado (GUEST_USER_ID) — não revogamos o acesso de todo mundo.
+    return NextResponse.json({ ok: true, skipped: true });
+  }
+
   const admin = createAdminClient();
 
   const { error: revokeError } = await admin
     .from("autorizacoes")
     .update({ status: "revogado" })
     .eq("cliente_id", GUEST_USER_ID)
+    .eq("mac_address", mac)
     .in("status", ["autorizado", "pendente", "erro", "kick_erro"]);
 
   if (revokeError) {

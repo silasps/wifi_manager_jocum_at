@@ -15,13 +15,25 @@ export async function POST(request: Request) {
   const { data: { user }, error: userError } = await supabase.auth.getUser(token);
   if (userError || !user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
+  let mac: string | undefined;
+  try {
+    const body = await request.json();
+    mac = typeof body?.mac === "string" ? body.mac.toLowerCase().trim() : undefined;
+  } catch {
+    mac = undefined;
+  }
+
   const admin = createAdminClient();
 
-  const { error: revokeError } = await admin
+  let query = admin
     .from("autorizacoes")
     .update({ status: "revogado" })
     .eq("cliente_id", user.id)
     .in("status", ["autorizado", "pendente", "erro", "kick_erro"]);
+
+  if (mac) query = query.eq("mac_address", mac);
+
+  const { error: revokeError } = await query;
 
   if (revokeError) {
     return NextResponse.json({ error: revokeError.message }, { status: 500 });

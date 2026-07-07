@@ -309,9 +309,10 @@ export default function HomePage() {
 
     try {
       const headers = { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` };
+      const body = JSON.stringify({ mac: captiveMac ?? getCookie("captive_mac") });
       await Promise.all([
-        fetch("/api/hotspot/revoke-my-access", { method: "POST", headers }),
-        fetch("/api/hotspot/revoke-free-access", { method: "POST", headers }),
+        fetch("/api/hotspot/revoke-my-access", { method: "POST", headers, body }),
+        fetch("/api/hotspot/revoke-free-access", { method: "POST", headers, body }),
       ]);
       setRevoking(false);
       setRevokeDone(true);

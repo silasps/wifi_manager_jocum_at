@@ -579,11 +579,13 @@ def autorizar_mac_unifi(mac, minutos, is_free=False):
         if velocidade:
             _aplicar_qos_mongo(mac_norm, velocidade)
             log(f"✅ QoS aplicado: {mac_norm} → {velocidade} Kbps")
+        _mac_auth_cache.pop(mac_norm, None)
         return result
     except Exception as e:
         log(f"[api] AUTHORIZE indisponível ({type(e).__name__}), usando MongoDB")
     # Fallback garantido: MongoDB direto (com QoS se free)
     _autorizar_via_mongo(mac_norm, minutos, velocidade)
+    _mac_auth_cache.pop(mac_norm, None)
 
 
 def processar_autorizacoes():
@@ -638,6 +640,7 @@ def kick_mac_unifi(mac):
          f'db.guest.remove({{"mac": "{mac_norm}"}})'],
         capture_output=True, text=True, timeout=5
     )
+    _mac_auth_cache.pop(mac_norm, None)
 
 
 def processar_revogacoes():
