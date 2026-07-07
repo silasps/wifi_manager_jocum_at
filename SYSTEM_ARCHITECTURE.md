@@ -197,11 +197,51 @@ Manter apenas: `ssl.gstatic.com`, `www.gstatic.com`, `fonts.gstatic.com`.
 
 ### `POST /api/hotspot/revoke-my-access`
 - **Auth:** Bearer token
-- **Fluxo:** Revoga todas autorizações do usuário autenticado
+- **Body:** `{ mac? }` (opcional)
+- **Fluxo:** Revoga autorizações do usuário autenticado. Se `mac` for enviado, filtra por `mac_address` (revoga só aquele dispositivo); sem `mac`, revoga todas as autorizações da conta (comportamento legado, mantido como fallback)
 
 ### `POST /api/hotspot/revoke-free-access`
 - **Auth:** Bearer token
-- **Fluxo:** Revoga todas autorizações do GUEST_USER_ID
+- **Body:** `{ mac }` (obrigatório na prática)
+- **Fluxo:** Revoga autorização do GUEST_USER_ID **filtrada por `mac_address`**
+- **⚠️ Sem `mac`, não faz nada** (`{ ok: true, skipped: true }`) — antes revogava o acesso gratuito de **todos** os visitantes anônimos da base a cada clique, já que não existia filtro nenhum. Corrigido em 2026-07-07.
+
+**Limitação estrutural do MAC no frontend:** o navegador não consegue ler o MAC do próprio dispositivo (bloqueado por privacidade). O frontend só aprende o MAC de um dispositivo quando ele chega via redirect do captive portal (`?id=<MAC>` → cookie `captive_mac`, ver `app/home/page.tsx`). Se o dispositivo já tem "internet" (não passou pelo redirect nessa sessão), o botão "desconectar" não tem como mirar nele especificamente — só consegue revogar autorizações já ligadas à conta logada. Para revogar um MAC desconhecido, é preciso localizá-lo manualmente (admin ou MongoDB direto, ver seção de diagnóstico Windows abaixo).
+
+---
+
+## Pagamentos (Asaas) — PIX e Cartão
+
+### Fluxo geral
+1. Usuário preenche cadastro/plano em `/` (ou `/renovacao`) → payload guardado em `sessionStorage.wf_signup` → navega para `/pagamento`.
+2. `/pagamento` chama `POST /api/asaas/pix` (ou `/api/asaas/card`), que **antes de gerar a cobrança**:
+   - Cria a conta Supabase (`resolveClienteId`, `utils/asaas/registration.ts`) — cliente já existe mesmo que o pagamento nunca confirme.
+   - Embute `clienteId` + `tempo` + `categoria` no `externalReference` da cobrança Asaas (`encodeExternalReference`), pra permitir finalizar o voucher sem depender do navegador.
+3. Cobrança confirmada → `confirmPaidVoucher` (`utils/asaas/registration.ts`) cria `vouchers` (status `pendente`) + `financas` + ativa `clientes.ativo`. Idempotente (checa `financas.comprovante_pgto` antes de inserir).
+4. `processar_vouchers()` no agent Python (UDM) pega o voucher `pendente` e preenche `codigo`/`data_expiracao` no MongoDB — igual ao fluxo de voucher gratuito.
+
+### Três caminhos que podem disparar `confirmPaidVoucher` (redundantes, idempotentes)
+| Caminho | Onde | Depende do navegador do usuário continuar aberto? |
+|---|---|---|
+| Webhook do Asaas | `POST /api/asaas/webhook` | Não — 100% servidor |
+| Polling do frontend | `GET /api/asaas/pix/[id]` (chamado a cada 5s por `/pagamento`) | Sim |
+| Cron de reconciliação | `GET /api/asaas/reconcile` (Vercel Cron, `*/5 * * * *`, ver `vercel.json`) | Não — varre pagamentos confirmados das últimas 2h no Asaas |
+
+### API Endpoints — Asaas
+- **`POST /api/asaas/pix`** — gera cobrança PIX + QR code. Cria cliente Supabase antes se `tempo` for enviado.
+- **`GET /api/asaas/pix/[id]`** — consulta status no Asaas; se confirmado, roda `confirmPaidVoucher` como fallback (não bloqueia a resposta se falhar).
+- **`POST /api/asaas/card`** — cobrança no cartão; confirmação síncrona (chama `confirmPaidVoucher` na hora, sem esperar webhook).
+- **`POST /api/asaas/webhook`** — recebe eventos `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`/`PAYMENT_RECEIVED_IN_CASH`. Valida header `asaas-access-token` contra `ASAAS_WEBHOOK_TOKEN`. Sempre responde 200 (exceto token inválido) pra evitar reenvio infinito do Asaas.
+- **`GET /api/asaas/reconcile`** — cron de reconciliação (ver acima). Protegido por `Authorization: Bearer $CRON_SECRET`.
+
+### ⚠️ iOS mata o portal cativo (CNA) ao abrir o app do banco durante o pagamento PIX (RESOLVIDO 2026-07-07)
+**Sintoma:** usuário gera o PIX dentro do portal cativo, abre o app do banco pra pagar, o dinheiro é debitado, a conta Supabase existe — mas nenhum voucher é criado e o usuário fica sem acesso à rede.
+**Causa raiz:** o WebView do Captive Network Assistant do iOS é **destruído** (não só pausado) quando o usuário troca de app. Isso mata o polling do `GET /api/asaas/pix/[id]`, que era **o único caminho ativo** de criação de voucher em produção — o webhook do Asaas nunca chegou a ser configurado no painel (faltava `ASAAS_WEBHOOK_TOKEN`).
+**Fix aplicado:**
+- `utils/captive/navigate.ts` (`captiveNavigate`) — detecta iOS + contexto de portal cativo (cookie `captive_mac`) e força abertura via `x-safari-https://` em vez de navegação normal. Isso faz o iOS abrir o Safari de verdade (que sobrevive à troca de app) em vez do WebView do CNA, a partir do primeiro clique em "Ver planos premium"/"Fazer upgrade"/"Renovar" no `/hotspot` — toda a jornada seguinte (form, PIX, polling) já roda dentro do Safari real.
+- `GET /api/asaas/reconcile` + `vercel.json` (cron a cada 5min) — rede de segurança final, cobre qualquer cenário em que webhook e polling falhem juntos.
+- Botão "Já paguei, verificar novamente" na tela `no-voucher` do `/hotspot` — recheck manual sem depender do iOS reabrir o portal sozinho.
+- **Pendente (operacional, fora do código):** configurar o webhook no painel do Asaas (`https://<domínio>/api/asaas/webhook`, eventos de pagamento confirmado) + variáveis `ASAAS_WEBHOOK_TOKEN` e `CRON_SECRET` na Vercel. Sem isso, o sistema ainda funciona (via escape pro Safari + cron), mas o caminho mais rápido/confiável (webhook) continua desligado.
 
 ---
 
@@ -219,7 +259,8 @@ Manter apenas: `ssl.gstatic.com`, `www.gstatic.com`, `fonts.gstatic.com`.
 
 ### Servidor Redirect (thread daemon, porta 8881)
 - Multi-threaded (`ThreadingMixIn`) — não trava com muitos requests
-- Verifica MongoDB antes de redirecionar (cache 30s)
+- Verifica MongoDB antes de redirecionar (`_is_mac_authorized`, cache `_mac_auth_cache` de 30s por MAC)
+- **Cache invalidado imediatamente** em `autorizar_mac_unifi()` e `kick_mac_unifi()` (fix 2026-07-07) — antes, um MAC podia continuar recebendo resposta "não autorizado" por até 30s depois de já ter sido autorizado de verdade no MongoDB (ou continuar "autorizado" por até 30s depois de revogado)
 - Para MACs autorizados:
   - Probes de conectividade conhecidas → resposta exata esperada pelo SO (tabela `_PROBE_DISPATCH`)
   - Qualquer outra requisição HTTP → **proxy transparente** para o host original (header `Host:`)
@@ -277,6 +318,10 @@ por MAC retorna 401 — permissão insuficiente). iptables + MongoDB já garante
 | `GUEST_USER_ID` | UUID do pseudo-usuário para acesso gratuito | Agent + Vercel env |
 | `NEXT_PUBLIC_SUPABASE_URL` | URL do Supabase | Vercel env |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Chave pública Supabase | Vercel env |
+| `ASAAS_API_KEY` | Chave da API do Asaas (produção) | Vercel env |
+| `ASAAS_API_URL` | Base da API Asaas (default `https://api.asaas.com/v3`; sandbox: `https://api-sandbox.asaas.com/v3`) | Vercel env |
+| `ASAAS_WEBHOOK_TOKEN` | Token validado contra o header `asaas-access-token` em `/api/asaas/webhook` | Vercel env — **⚠️ pendente de configuração em produção** (ver seção Pagamentos) |
+| `CRON_SECRET` | Protege `GET /api/asaas/reconcile` (Vercel injeta `Authorization: Bearer $CRON_SECRET` nas chamadas de cron) | Vercel env — **⚠️ pendente de configuração** |
 
 **GUEST_USER_ID:** `5b0e3ee1-a588-460e-8572-2c658f52fde2`
 **Site ID UDM:** `6834b054b243651f00c8dcc5`
@@ -356,6 +401,29 @@ systemctl start udm-agent
 **⚠️ Importante:** O systemd deve executar `start_agent.sh` (não `python3 udm_agent.py` diretamente).
 `start_agent.sh` exporta `SUPABASE_SERVICE_ROLE_KEY` — sem esse passo o agent inicia com a variável
 vazia e todas as chamadas ao Supabase retornam `401 No API key found`.
+
+### ⚠️ Deploy do agent NÃO é automático
+
+`git push` só atualiza o Vercel (frontend + API routes). O `scripts/udm_agent.py` do repositório é uma
+**cópia de referência** — o arquivo que roda de verdade fica em `/data/scripts/udm_agent.py` na própria
+UDM, e precisa ser copiado manualmente toda vez que houver mudança:
+
+```bash
+# 1. Backup do arquivo atual (por segurança)
+ssh root@10.70.0.1 "cp /data/scripts/udm_agent.py /data/scripts/udm_agent.py.bak.$(date +%Y%m%d%H%M%S)"
+
+# 2. Copiar a versão corrigida
+scp scripts/udm_agent.py root@10.70.0.1:/data/scripts/udm_agent.py
+
+# 3. Validar sintaxe e reiniciar
+ssh root@10.70.0.1 "python3 -m py_compile /data/scripts/udm_agent.py && systemctl restart udm-agent"
+
+# 4. Confirmar
+ssh root@10.70.0.1 "systemctl status udm-agent --no-pager -l | head -15"
+```
+
+Esquecer esse passo é uma causa comum de "corrigi o bug mas continua acontecendo" — o fix existe no
+git mas o processo rodando na UDM ainda é a versão antiga.
 
 ### Verificação rápida
 ```bash
@@ -453,6 +521,46 @@ A função `aplicar_bloqueio_https()` existe no código mas **não é chamada** 
 
 ### Após atualização de firmware da UDM
 Verificar: agent rodando, serviço systemd ativo (`systemctl status udm-agent`), regras iptables no lugar, `redirect_https: false`.
+
+### Windows 11 — CNA não abre sozinho / ícone mostra "Sem Internet" (EM INVESTIGAÇÃO, 2026-07-07)
+
+O fix de NCSI documentado acima (`connecttest.txt`) foi validado só em Windows 10. Testando em Windows 11
+pela primeira vez apareceram sintomas novos:
+
+**1. Simples desconectar/reconectar Wi-Fi não força o Windows a refazer a checagem NCSI.** Ele reaproveita
+o veredito antigo em cache ("tenho internet") sem mandar nenhuma probe HTTP nova — confirmado via
+`tail -f agent.log`: nenhuma requisição do dispositivo aparecia no redirect server depois do toggle.
+**Contorno que funcionou:** "Esquecer rede" (Configurações → Rede e Internet → Wi-Fi → Gerenciar redes
+conhecidas) + reconectar do zero. Depois disso o tráfego do dispositivo passou a aparecer no log.
+
+**2. Mesmo com "esquecer rede", a probe NCSI real (`/connecttest.txt`) não disparou sozinha** — só
+tráfego de apps de fundo (ex: uma lib `axios` fazendo `GET ip-api.com/json`, algum serviço Samsung
+batendo em `orcaservice.samsungmobile.com/monitor.html`) apareceu interceptado. O fluxo completo só
+disparou de fato quando o usuário **digitou uma URL HTTP manualmente no navegador** — isso confirmou que
+login → voucher → autorização funcionam corretamente em Windows 11 quando uma request HTTP real acontece.
+
+**3. Depois de autorizado, o ícone do Wi-Fi continuou mostrando "Sem Internet, aberto"** mesmo com
+tráfego real fluindo (confirmado no log: `GET /`, `/json`, proxy funcionando, sem nenhuma marca de "não
+autorizado"). Isso bateu com o bug do cache de 30s (`_mac_auth_cache`, ver seção do Agent Python) — a
+mesma probe de conectividade recebia "não autorizado" por até 30s depois de já estar autorizado no
+MongoDB. **Corrigido e deployado na UDM em 2026-07-07.** Mesmo depois do fix, em um teste pontual o ícone
+continuou "Sem Internet" após toggle simples de Wi-Fi — a hipótese é que o Windows não tinha refeito a
+probe própria (`connecttest.txt`) ainda (só viu tráfego de apps de fundo, não a checagem NCSI do SO).
+
+**Status:** sistema confirmadamente autoriza e libera internet real para Windows 11 (proxy funcionando).
+O que ainda não está 100% resolvido é o **ícone da barra de tarefas do Windows** demorar a refletir isso —
+possivelmente por causa do timing próprio do NCSI/NLA do Windows, não por resposta errada do nosso lado.
+Próximos passos a testar: `Configurações → Rede e Internet → Status → Diagnosticar problemas de rede`,
+reiniciar o serviço `NlaSvc` do Windows, ou aguardar o ciclo natural de reavaliação do NCSI.
+
+**Diagnóstico usado (útil para próximas investigações):**
+```bash
+# Monitorar em tempo real enquanto o dispositivo testa (rodar ANTES do teste, ~90-120s)
+ssh root@10.70.0.1 "timeout 120 tail -f -n 0 /data/scripts/agent.log"
+
+# Checar se um MAC específico está autorizado
+ssh root@10.70.0.1 'mongo --port 27117 ace --quiet --eval "db.guest.find({\"mac\":\"<mac>\"}).pretty()"'
+```
 
 ---
 
