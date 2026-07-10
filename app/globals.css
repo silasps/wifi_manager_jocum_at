@@ -405,6 +405,56 @@ input:disabled {
   opacity: 0.55;
 }
 
+.people-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 8px;
+  width: fit-content;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 121, 42, 0.32);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.people-stepper button {
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 121, 42, 0.4);
+  background: rgba(255, 121, 42, 0.14);
+  color: #ffae73;
+  font-size: 1.15rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.people-stepper button:disabled {
+  opacity: 0.35;
+}
+
+.people-stepper strong {
+  min-width: 22px;
+  text-align: center;
+  font-size: 1.02rem;
+  color: #fff7ef;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 2px;
+  color: #a9a19a;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.field-hint strong {
+  color: #ffae73;
+}
+
 .package-summary {
   width: 100%;
   padding: 14px;
@@ -498,6 +548,7 @@ input:disabled {
   text-decoration: line-through;
   opacity: 0.72;
 }
+
 
 .payment-page {
   min-height: 100svh;
@@ -625,6 +676,15 @@ input:disabled {
   display: block;
   color: #d8d0c8;
   font-size: 0.88rem;
+}
+
+.package-summary .extras-hint,
+.package-card .extras-hint {
+  margin: 6px 0 0;
+  color: #ffae73;
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-transform: none;
 }
 
 .amount-box {

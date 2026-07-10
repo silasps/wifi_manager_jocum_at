@@ -103,16 +103,17 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
   const extras = Math.max(0, quantidadeObreiros - 3);
   let original = 0;
   let final = 0;
+  let extrasAmount = 0;
 
-  if (!category || !plan) return { original, final, discount: 0 };
+  if (!category || !plan) return { original, final, discount: 0, extras: 0, extrasAmount: 0 };
 
   if (plan === "Quinzenal") {
     original = 15 * dailyUnitValue(category);
     final = quinzenalPrice(category);
-    return { original, final, discount: Math.max(0, original - final) };
+    return { original, final, discount: Math.max(0, original - final), extras: 0, extrasAmount: 0 };
   }
 
-  if (!tempo) return { original, final, discount: 0 };
+  if (!tempo) return { original, final, discount: 0, extras: 0, extrasAmount: 0 };
 
   if (plan === "Diário") {
     original = tempo * dailyUnitValue(category);
@@ -128,7 +129,8 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
     if (category === "Ministério") {
       const base = tempo * 50;
       const baseComDesconto = tempo >= 12 ? base * 0.75 : tempo >= 3 ? base * 0.8 : base;
-      final = baseComDesconto + extras * 15 * tempo;
+      extrasAmount = extras * 15 * tempo;
+      final = baseComDesconto + extrasAmount;
     }
   } else if (plan === "Anual") {
     if (category === "Aluno") original = 35 * 12 * tempo;
@@ -137,10 +139,13 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
     if (category === "Ministério") original = 50 * 12 * tempo + extras * 15 * 12 * tempo;
     final = original;
     if (category === "Aluno" || category === "Obreiro" || category === "Casal") final = original * 0.9;
-    if (category === "Ministério") final = 50 * 12 * tempo * 0.75 + extras * 15 * 12 * tempo;
+    if (category === "Ministério") {
+      extrasAmount = extras * 15 * 12 * tempo;
+      final = 50 * 12 * tempo * 0.75 + extrasAmount;
+    }
   }
 
-  return { original, final, discount: Math.max(0, original - final) };
+  return { original, final, discount: Math.max(0, original - final), extras, extrasAmount };
 }
 
 export default function RenovacaoPage() {
@@ -191,11 +196,12 @@ export default function RenovacaoPage() {
       setNome(cliente.nome || "");
       setEmail(cliente.email || "");
       setWhatsApp(cliente.whatsApp || "");
-      setCategoria((cliente.categoria as Category) || "Obreiro");
+      const initialCategoria = (cliente.categoria as Category) || "Obreiro";
+      setCategoria(initialCategoria);
 
-      if (voucher) {
-        const v = voucher as { qtdObreiros?: number | null };
-        if (v.qtdObreiros) setMinistryPeople(String(v.qtdObreiros));
+      if (initialCategoria === "Ministério") {
+        const v = voucher as { qtdObreiros?: number | null } | null;
+        setMinistryPeople(String(Math.max(3, v?.qtdObreiros || 3)));
       }
 
       setLoading(false);
@@ -269,8 +275,9 @@ export default function RenovacaoPage() {
               <select
                 value={categoria}
                 onChange={(e) => {
-                  setCategoria(e.target.value as Category);
-                  if (e.target.value !== "Ministério") setMinistryPeople("");
+                  const value = e.target.value as Category;
+                  setCategoria(value);
+                  setMinistryPeople(value === "Ministério" ? (ministryPeople || "3") : "");
                 }}
               >
                 {categories.map((c) => (
@@ -282,12 +289,27 @@ export default function RenovacaoPage() {
             {categoria === "Ministério" && (
               <label>
                 Quantas pessoas vão utilizar o Wi-Fi
-                <input
-                  value={ministryPeople}
-                  onChange={(e) => setMinistryPeople(e.target.value.replace(/\D/g, "").slice(0, 3))}
-                  inputMode="numeric"
-                  placeholder="Ex: 5"
-                />
+                <span className="people-stepper">
+                  <button
+                    type="button"
+                    onClick={() => setMinistryPeople(String(Math.max(3, Number(ministryPeople || 3) - 1)))}
+                    disabled={Number(ministryPeople || 3) <= 3}
+                    aria-label="Diminuir quantidade de pessoas"
+                  >
+                    −
+                  </button>
+                  <strong>{ministryPeople || "3"}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setMinistryPeople(String(Math.min(999, Number(ministryPeople || 3) + 1)))}
+                    aria-label="Aumentar quantidade de pessoas"
+                  >
+                    +
+                  </button>
+                </span>
+                <small className="field-hint">
+                  O valor base já inclui até 3 pessoas. Cada pessoa a mais soma <strong>+R$15</strong> nos planos mensal e anual — não se aplica aos planos Diário e 15 dias.
+                </small>
               </label>
             )}
           </section>
@@ -348,6 +370,11 @@ export default function RenovacaoPage() {
                 <li className={plan ? "done" : ""}><span>{plan ? "✓" : "○"}</span>{plan || "Escolha o tempo de acesso"}</li>
                 <li className={time ? "done" : ""}><span>{time ? "✓" : "○"}</span>{time ? timeLabel(plan, amount) : "Informe a duração"}</li>
               </ul>
+              {packageReady && price.extrasAmount > 0 && (
+                <p className="extras-hint">
+                  +{price.extras} obreiro{price.extras > 1 ? "s" : ""} além dos 3 inclusos · +{money.format(price.extrasAmount)}
+                </p>
+              )}
             </div>
             <div>
               {packageReady ? (

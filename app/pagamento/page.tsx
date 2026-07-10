@@ -128,6 +128,17 @@ const [showCardForm, setShowCardForm] = useState(false);
     return payload.qtd_pessoas_ministerio || 3;
   }, [payload]);
 
+  // Regra de preço (R$50 base até 3 pessoas + R$15/pessoa extra) só vale para Mensal/Anual —
+  // Diário e 15 dias têm preço fechado e não usam a quantidade de pessoas.
+  const ministryExtras = useMemo(() => {
+    if (!payload || payload.categoria !== "Ministério") return null;
+    if (payload.tipo_plano !== "Mensal" && payload.tipo_plano !== "Anual") return null;
+    const extras = Math.max(0, (payload.qtd_pessoas_ministerio || 0) - 3);
+    if (extras <= 0) return null;
+    const extrasAmount = payload.tipo_plano === "Mensal" ? extras * 15 * payload.tempo_numero : extras * 15 * 12 * payload.tempo_numero;
+    return { extras, extrasAmount };
+  }, [payload]);
+
   const copyPixCode = async () => {
     if (!pixData) return;
     try {
@@ -379,6 +390,9 @@ const [showCardForm, setShowCardForm] = useState(false);
                   <strong>{payload.categoria}</strong>
                   <span>{payload.tempo} · {payload.tipo_plano}</span>
                   {ministryPeople && <span>{ministryPeople} obreiros</span>}
+                  {ministryExtras && (
+                    <span className="extras-hint">+{ministryExtras.extras} além dos 3 inclusos · +{money.format(ministryExtras.extrasAmount)}</span>
+                  )}
                 </div>
                 <div className="amount-box">
                   <span>Valor</span>
@@ -448,6 +462,9 @@ const [showCardForm, setShowCardForm] = useState(false);
                     {payload.tempo} · {payload.tipo_plano}
                   </span>
                   {ministryPeople && <span>{ministryPeople} obreiros</span>}
+                  {ministryExtras && (
+                    <span className="extras-hint">+{ministryExtras.extras} além dos 3 inclusos · +{money.format(ministryExtras.extrasAmount)}</span>
+                  )}
                 </div>
                 <div className="amount-box">
                   <span>Valor</span>

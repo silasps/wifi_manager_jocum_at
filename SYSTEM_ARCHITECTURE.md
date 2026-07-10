@@ -309,6 +309,36 @@ por MAC retorna 401 — permissão insuficiente). iptables + MongoDB já garante
 
 ---
 
+## Regras de Preço — Cadastro e Renovação
+
+Lógica duplicada (sem módulo compartilhado) em `app/page.tsx` (cadastro), `app/renovacao/page.tsx`
+(renovação) e `app/admin/page.tsx` (criação manual pelo admin) — função `planPrice()` em cada arquivo.
+
+### Ministério — pessoas extras
+- Categoria "Ministério" inclui **3 pessoas** no valor base (R$50/mês, R$40/15 dias).
+- Cada pessoa além de 3 soma **+R$15** — só nos planos **Mensal** e **Anual**
+  (`extras = max(0, qtd_pessoas - 3)`; no Anual multiplica também por 12 meses).
+- Planos **Diário** e **Quinzenal (15 dias)** têm preço fechado por categoria e **não usam** a
+  quantidade de pessoas no cálculo, mesmo que o campo apareça no formulário.
+- Desconto por volume (20%/25% off no mensal, 25% no anual) incide **só sobre a base**, nunca sobre
+  os extras — os +R$15/pessoa não recebem desconto.
+
+### UI (2026-07-10)
+- Ao selecionar "Ministério", a quantidade de pessoas já inicia em 3 (mínimo) — trocado o campo livre
+  por um stepper (`-`/`+`, classe `.people-stepper`) que não desce de 3, com hint fixo explicando a
+  regra dos +R$15/pessoa nos planos mensal/anual.
+- Resumo do plano (`PlanSummary` em `app/page.tsx`; bloco inline equivalente em `renovacao/page.tsx`
+  e `pagamento/page.tsx`) ganhou uma linha extra (`.extras-hint`) quando há gente além das 3 inclusas:
+  "+N obreiros além dos 3 inclusos · +R$X".
+- `app/admin/page.tsx` não tem esse input — sempre calcula com `people = "3"` fixo mesmo para
+  Ministério (divergência conhecida, fora do escopo desta mudança).
+
+### Risco conhecido
+`valor` final é calculado no client e enviado como está para `/api/asaas/pix` e `/api/asaas/card` —
+sem recálculo/validação server-side da fórmula antes de gerar a cobrança no Asaas.
+
+---
+
 ## Credenciais e Variáveis de Ambiente
 
 | Variável | Descrição | Onde |

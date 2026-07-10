@@ -137,16 +137,17 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
   const extras = Math.max(0, quantidadeObreiros - 3);
   let original = 0;
   let final = 0;
+  let extrasAmount = 0;
 
-  if (!category || !plan) return { original, final, discount: 0 };
+  if (!category || !plan) return { original, final, discount: 0, extras: 0, extrasAmount: 0 };
 
   if (plan === "Quinzenal") {
     original = 15 * dailyUnitValue(category);
     final = quinzenalPrice(category);
-    return { original, final, discount: Math.max(0, original - final) };
+    return { original, final, discount: Math.max(0, original - final), extras: 0, extrasAmount: 0 };
   }
 
-  if (!tempo) return { original, final, discount: 0 };
+  if (!tempo) return { original, final, discount: 0, extras: 0, extrasAmount: 0 };
 
   if (plan === "Diário") {
     original = tempo * dailyUnitValue(category);
@@ -163,7 +164,8 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
     if (category === "Ministério") {
       const base = tempo * 50;
       const baseComDesconto = tempo >= 12 ? base * 0.75 : tempo >= 3 ? base * 0.8 : base;
-      final = baseComDesconto + extras * 15 * tempo;
+      extrasAmount = extras * 15 * tempo;
+      final = baseComDesconto + extrasAmount;
     }
   } else if (plan === "Anual") {
     if (category === "Aluno") original = 35 * 12 * tempo;
@@ -173,10 +175,13 @@ function planPrice(category: Category, plan: Plan, amount: string, people: strin
 
     final = original;
     if (category === "Aluno" || category === "Obreiro" || category === "Casal") final = original * 0.9;
-    if (category === "Ministério") final = 50 * 12 * tempo * 0.75 + extras * 15 * 12 * tempo;
+    if (category === "Ministério") {
+      extrasAmount = extras * 15 * 12 * tempo;
+      final = 50 * 12 * tempo * 0.75 + extrasAmount;
+    }
   }
 
-  return { original, final, discount: Math.max(0, original - final) };
+  return { original, final, discount: Math.max(0, original - final), extras, extrasAmount };
 }
 
 function isValidEmail(value: string) {
@@ -230,7 +235,7 @@ function PlanSummary({
   checklist: Array<{ label: string; pending: string; done: boolean }>;
   packageReady: boolean;
   plan: Plan;
-  price: { original: number; final: number; discount: number };
+  price: { original: number; final: number; discount: number; extras: number; extrasAmount: number };
 }) {
   return (
     <aside className="package-summary" aria-label="Resumo do pacote">
@@ -244,6 +249,11 @@ function PlanSummary({
             </li>
           ))}
         </ul>
+        {packageReady && price.extrasAmount > 0 && (
+          <p className="extras-hint">
+            +{price.extras} obreiro{price.extras > 1 ? "s" : ""} além dos 3 inclusos · +{money.format(price.extrasAmount)}
+          </p>
+        )}
       </div>
       <div>
         {packageReady ? (
@@ -318,7 +328,7 @@ export default function Home() {
       const next = { ...current, [field]: value };
       if (field === "category") {
         next.name = "";
-        next.ministryPeople = "";
+        next.ministryPeople = value === "Ministério" ? "3" : "";
       }
       if (field === "plan") next.time = value === "Diário" ? "2" : value === "Quinzenal" ? "15" : "1";
       return next;
@@ -594,7 +604,27 @@ export default function Home() {
               {signup.category === "Ministério" && (
                 <label>
                   Quantas pessoas vão utilizar o Wi-Fi
-                  <input value={signup.ministryPeople} onChange={(event) => updateSignup("ministryPeople", onlyDigits(event.target.value).slice(0, 3))} inputMode="numeric" required />
+                  <span className="people-stepper">
+                    <button
+                      type="button"
+                      onClick={() => updateSignup("ministryPeople", String(Math.max(3, Number(signup.ministryPeople || 3) - 1)))}
+                      disabled={Number(signup.ministryPeople || 3) <= 3}
+                      aria-label="Diminuir quantidade de pessoas"
+                    >
+                      −
+                    </button>
+                    <strong>{signup.ministryPeople || "3"}</strong>
+                    <button
+                      type="button"
+                      onClick={() => updateSignup("ministryPeople", String(Math.min(999, Number(signup.ministryPeople || 3) + 1)))}
+                      aria-label="Aumentar quantidade de pessoas"
+                    >
+                      +
+                    </button>
+                  </span>
+                  <small className="field-hint">
+                    O valor base já inclui até 3 pessoas. Cada pessoa a mais soma <strong>+R$15</strong> nos planos mensal e anual — não se aplica aos planos Diário e 15 dias.
+                  </small>
                 </label>
               )}
 
