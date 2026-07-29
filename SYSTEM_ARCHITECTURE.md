@@ -256,7 +256,7 @@ Manter apenas: `ssl.gstatic.com`, `www.gstatic.com`, `fonts.gstatic.com`.
 | `aplicar_walled_garden()` | 60s | Re-resolve DNS dos domínios, atualiza ipset |
 | `garantir_redirect_porta_80()` | 60s | Garante regras iptables no lugar |
 | `_limpar_bypass_expirados()` | 60s | Remove bypass MAC expirados (iptables) **e** remove do MongoDB registros expirados (`end < now, authorized_by="api"`) para forçar re-detecção do captive portal |
-| `_reautorizar_macs_cliente()` | Sob demanda | Re-autoriza no MongoDB os MACs mais recentes de um cliente quando novo voucher pago é processado |
+| `_reautorizar_macs_cliente()` | Sob demanda | Re-autoriza no MongoDB os **5 MACs mais recentes** de um cliente quando novo voucher pago é processado |
 
 ### Servidor Redirect (thread daemon, porta 8881)
 - Multi-threaded (`ThreadingMixIn`) — não trava com muitos requests
@@ -562,7 +562,7 @@ A função `aplicar_bloqueio_https()` existe no código mas **não é chamada** 
 
 `_limpar_bypass_expirados()` (roda a cada 60s) passou a **remover do MongoDB** os registros com `authorized_by="api"` e `end < now` (excluindo stubs com `end=1`). Isso força o UniFi a eventualmente deautenticar o device, que ao reconectar passa pelo captive portal e é re-autorizado automaticamente se tiver sessão ativa e voucher válido.
 
-Nova função `_reautorizar_macs_cliente(cliente_uid, tempo_minutos)`: chamada de dentro de `processar_vouchers()` sempre que um voucher **pago** (não gratuito, não `GUEST_USER_ID`) é processado. Busca os 3 MACs mais recentes com `status="autorizado"` para o cliente no Supabase e os re-autoriza diretamente no MongoDB com o novo tempo. **Efeito prático:** o device volta a ter internet em até 60 segundos após o pagamento, sem precisar reconectar ou interagir com o captive portal.
+Nova função `_reautorizar_macs_cliente(cliente_uid, tempo_minutos)`: chamada de dentro de `processar_vouchers()` sempre que um voucher **pago** (não gratuito, não `GUEST_USER_ID`) é processado. Busca os **5 MACs mais recentes** com `status="autorizado"` para o cliente no Supabase e os re-autoriza diretamente no MongoDB com o novo tempo. **Efeito prático:** o device volta a ter internet em até 60 segundos após o pagamento, sem precisar reconectar ou interagir com o captive portal.
 
 **Sem impacto em usuários ativos:** ambas as mudanças só afetam registros com `end < now` (já expirados) ou clientes que acabaram de pagar um novo voucher.
 
