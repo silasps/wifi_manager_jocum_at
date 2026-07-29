@@ -285,6 +285,10 @@ def processar_vouchers():
                     data_expiracao = exp_time.strftime("%Y-%m-%d %H:%M:%S")
                 atualizar_voucher_supabase(reg["id"], codigo, data_expiracao, quota)
                 log(f"✅ Voucher criado: {codigo} | {'Sem expiração' if is_ilimitado else f'Expira em: {data_expiracao}'}")
+                # Re-autoriza MACs recentes do cliente para que o device volte a ter internet
+                # sem precisar reconectar manualmente. Só para vouchers pagos com duração definida.
+                if not is_free and cliente_uid and cliente_uid != GUEST_USER_ID and tempo > 0:
+                    _reautorizar_macs_cliente(cliente_uid, tempo)
     except Exception as e:
         log(f"❌ Erro: {e}")
 
@@ -536,31 +540,82 @@ def _adicionar_bypass_mac(mac_norm):
 
 
 def _limpar_bypass_expirados():
-    """Remove bypass rules de MACs cuja autorização expirou."""
+    """Remove bypass rules de MACs cuja autorização expirou e limpa registros expirados do MongoDB."""
     result = subprocess.run(
         ["iptables", "-t", "nat", "-S", "PREROUTING"],
         capture_output=True, text=True, timeout=5
     )
-    if result.returncode != 0:
-        return
     now = int(time.time())
-    for line in result.stdout.strip().split('\n'):
-        match = re.search(r'--mac-source\s+([0-9a-fA-F:]+)\s+-j\s+RETURN', line)
-        if not match:
-            continue
-        mac = match.group(1).lower()
-        check = subprocess.run(
-            ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
-             f'db.guest.find({{"mac": "{mac}", "end": {{"$gt": NumberLong({now})}}}}).count()'],
-            capture_output=True, text=True, timeout=5
-        )
-        if check.returncode == 0 and check.stdout.strip() == "0":
-            subprocess.run(
-                ["iptables", "-t", "nat", "-D", "PREROUTING",
-                 "-m", "mac", "--mac-source", mac, "-j", "RETURN"],
-                capture_output=True
+    if result.returncode == 0:
+        for line in result.stdout.strip().split('\n'):
+            match = re.search(r'--mac-source\s+([0-9a-fA-F:]+)\s+-j\s+RETURN', line)
+            if not match:
+                continue
+            mac = match.group(1).lower()
+            check = subprocess.run(
+                ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+                 f'db.guest.find({{"mac": "{mac}", "end": {{"$gt": NumberLong({now})}}}}).count()'],
+                capture_output=True, text=True, timeout=5
             )
-            log(f"🧹 Bypass expirado removido: {mac}")
+            if check.returncode == 0 and check.stdout.strip() == "0":
+                subprocess.run(
+                    ["iptables", "-t", "nat", "-D", "PREROUTING",
+                     "-m", "mac", "--mac-source", mac, "-j", "RETURN"],
+                    capture_output=True
+                )
+                log(f"🧹 Bypass expirado removido: {mac}")
+
+    # Remove registros expirados do MongoDB para forçar re-detecção do captive portal.
+    # end > 1 exclui stub records criados por _garantir_guest_record (end=1).
+    exp_result = subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+         f'db.guest.find({{authorized_by:"api",end:{{$lt:NumberLong({now}),$gt:NumberLong(1)}}}},{{mac:1,_id:0}})'
+         f'.forEach(function(d){{print(d.mac)}})'],
+        capture_output=True, text=True, timeout=10
+    )
+    if exp_result.returncode == 0:
+        for _mac in exp_result.stdout.strip().split('\n'):
+            _mac = _mac.strip()
+            if not _mac or ':' not in _mac:
+                continue
+            subprocess.run(
+                ["mongo", "--port", "27117", "ace", "--quiet", "--eval",
+                 f'db.guest.remove({{mac:"{_mac}",authorized_by:"api",end:{{$lt:NumberLong({now})}}}})'],
+                capture_output=True, timeout=5
+            )
+            _mac_auth_cache.pop(_mac, None)
+            log(f"🧹 MAC expirado removido do MongoDB: {_mac}")
+
+
+def _reautorizar_macs_cliente(cliente_uid, tempo_minutos):
+    """Re-autoriza os MACs mais recentes do cliente quando um novo voucher pago é criado.
+    Evita que o device fique sem internet até passar manualmente pelo captive portal."""
+    try:
+        path = (f"/rest/v1/autorizacoes?select=mac_address"
+                f"&cliente_id=eq.{urllib.parse.quote(str(cliente_uid))}"
+                f"&status=eq.autorizado&order=id.desc&limit=3")
+        conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
+        conn.request("GET", path, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
+        res = conn.getresponse()
+        rows = json.loads(res.read().decode())
+        conn.close()
+        if not isinstance(rows, list) or not rows:
+            return
+        seen = set()
+        for row in rows:
+            mac = (row.get('mac_address') or '').lower().strip()
+            if not mac or mac in seen:
+                continue
+            seen.add(mac)
+            try:
+                mac_norm = _normalizar_mac(mac).lower()
+                _autorizar_via_mongo(mac_norm, tempo_minutos, VELOCIDADE_PAGO_KBPS)
+                _mac_auth_cache.pop(mac_norm, None)
+                log(f"♻️ MAC {mac_norm} re-autorizado automaticamente ({tempo_minutos} min)")
+            except Exception as e:
+                log(f"⚠️ Erro ao re-autorizar MAC {mac}: {e}")
+    except Exception as e:
+        log(f"⚠️ _reautorizar_macs_cliente: {e}")
 
 
 def autorizar_mac_unifi(mac, minutos, is_free=False):
