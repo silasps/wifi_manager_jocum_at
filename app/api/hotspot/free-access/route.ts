@@ -36,16 +36,25 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   // Checar autorização já ativa para este MAC
+  type ActiveAuthRow = { id: string; status: string; minutos: number; created_at: string };
   const { data: activeAuth } = await admin
     .from("autorizacoes")
-    .select("id, status")
+    .select("id, status, minutos, created_at")
     .eq("mac_address", mac)
     .eq("cliente_id", guestUserId)
     .eq("status", "autorizado")
-    .limit(1);
+    .order("created_at", { ascending: false })
+    .limit(1) as { data: ActiveAuthRow[] | null };
 
   if (activeAuth && activeAuth.length > 0) {
-    return NextResponse.json({ status: "autorizado", auth_id: activeAuth[0].id });
+    const auth = activeAuth[0];
+    const ageMinutes = (Date.now() - new Date(auth.created_at).getTime()) / 60000;
+    if (ageMinutes < auth.minutos) {
+      return NextResponse.json({ status: "autorizado", auth_id: auth.id });
+    }
+    // Autorização free expirou (24h) — o agent na UDM já removeu o bypass real de rede,
+    // mas este registro nunca era atualizado. Marca como expirado e segue para reautorizar de verdade.
+    await admin.from("autorizacoes").update({ status: "expirado" }).eq("id", auth.id);
   }
 
   // Checar autorização pendente para este MAC
