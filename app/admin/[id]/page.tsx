@@ -299,6 +299,9 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteVoucherTarget, setDeleteVoucherTarget] = useState<Voucher | null>(null);
+  const [deletingVoucher, setDeletingVoucher] = useState(false);
+  const [deleteVoucherError, setDeleteVoucherError] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -496,6 +499,24 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
       setDeleteError(data.error || "Erro ao excluir.");
       setDeleting(false);
     }
+  };
+
+  const confirmDeleteVoucher = async () => {
+    if (!tokenRef.current || !deleteVoucherTarget?.id) return;
+    setDeletingVoucher(true);
+    setDeleteVoucherError(null);
+    const res = await fetch(`/api/admin/vouchers/${deleteVoucherTarget.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenRef.current}` },
+    });
+    const data = (await res.json()) as { ok?: boolean; error?: string };
+    if (data.ok) {
+      setVouchers((vs) => vs.filter((v) => v.id !== deleteVoucherTarget.id));
+      setDeleteVoucherTarget(null);
+    } else {
+      setDeleteVoucherError(data.error || "Erro ao excluir voucher.");
+    }
+    setDeletingVoucher(false);
   };
 
   const copyVoucher = async (voucher: Voucher) => {
@@ -982,13 +1003,23 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
                         <span>{v.qtdObreiros} {v.qtdObreiros === 1 ? "obreiro" : "obreiros"}</span>
                       )}
                     </div>
-                    <button
-                      className="admin-voucher-renew"
-                      type="button"
-                      onClick={() => { setUpdateError(null); setRenewVoucher(v); }}
-                    >
-                      Atualizar
-                    </button>
+                    <div className="admin-voucher-actions">
+                      <button
+                        className="admin-voucher-renew"
+                        type="button"
+                        onClick={() => { setUpdateError(null); setRenewVoucher(v); }}
+                      >
+                        Atualizar
+                      </button>
+                      <button
+                        className="admin-voucher-delete-btn"
+                        type="button"
+                        onClick={() => { setDeleteVoucherError(null); setDeleteVoucherTarget(v); }}
+                        aria-label="Excluir voucher"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -1039,6 +1070,55 @@ export default function AdminClientPage({ params }: { params: { id: string } }) 
               type="button"
               onClick={() => setShowDeleteModal(false)}
               disabled={deleting}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete voucher modal ── */}
+      {deleteVoucherTarget && (
+        <div
+          className="admin-modal-backdrop"
+          role="presentation"
+          onClick={() => !deletingVoucher && setDeleteVoucherTarget(null)}
+        >
+          <div
+            className="admin-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-voucher-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="admin-modal-close"
+              type="button"
+              onClick={() => setDeleteVoucherTarget(null)}
+              aria-label="Fechar"
+              disabled={deletingVoucher}
+            >
+              ×
+            </button>
+            <h3 id="delete-voucher-title" className="admin-modal-title">Excluir voucher</h3>
+            <p className="admin-modal-info admin-modal-info--warn">
+              Excluir o voucher <strong>{deleteVoucherTarget.codigo || "pendente"}</strong>?
+              {" "}Esta ação é <strong>irreversível</strong> e o dispositivo perderá o acesso imediatamente.
+            </p>
+            {deleteVoucherError && <p className="admin-modal-error">{deleteVoucherError}</p>}
+            <button
+              className="admin-modal-confirm admin-modal-confirm--danger"
+              type="button"
+              onClick={confirmDeleteVoucher}
+              disabled={deletingVoucher}
+            >
+              {deletingVoucher ? "Excluindo…" : "Sim, excluir voucher"}
+            </button>
+            <button
+              className="admin-modal-confirm admin-modal-confirm--ghost"
+              type="button"
+              onClick={() => setDeleteVoucherTarget(null)}
+              disabled={deletingVoucher}
             >
               Cancelar
             </button>

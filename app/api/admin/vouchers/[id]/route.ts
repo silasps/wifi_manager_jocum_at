@@ -52,3 +52,20 @@ export async function PATCH(
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: "Configuração incompleta." }, { status: 500 });
+  }
+  const user = await requireAdmin(request);
+  if (!user) return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("vouchers").delete().eq("id", params.id);
+
+  if (error) return NextResponse.json({ error: "Erro ao excluir voucher." }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}

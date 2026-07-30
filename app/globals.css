@@ -2845,6 +2845,12 @@ input:disabled {
   color: rgba(255, 255, 255, 0.45);
 }
 
+.admin-voucher-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .admin-voucher-renew {
   align-self: flex-start;
   padding: 5px 14px;
@@ -2861,6 +2867,23 @@ input:disabled {
 .admin-voucher-renew:hover {
   background: rgba(255, 121, 42, 0.1);
   border-color: rgba(255, 121, 42, 0.7);
+}
+
+.admin-voucher-delete-btn {
+  padding: 5px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(239, 68, 68, 0.7);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.admin-voucher-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.7);
+  color: #ef4444;
 }
 
 /* ─── Admin: renewal modal ─── */
