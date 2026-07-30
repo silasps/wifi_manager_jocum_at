@@ -144,15 +144,17 @@ def converter_tempo_para_minutos(tempo_desc):
     Converte uma string de tempo por extenso (ex: '1 mês', '2 dias') para minutos.
     """
     tempos = {
-        "mês": 43200,  # 1 mês = 30 dias = 43200 minutos
+        "ano": 525600,  # 1 ano = 365 dias = 525600 minutos
+        "anos": 525600,
+        "mês": 43200,   # 1 mês = 30 dias = 43200 minutos
         "meses": 43200,
-        "dia": 1440,   # 1 dia = 1440 minutos
+        "dia": 1440,    # 1 dia = 1440 minutos
         "dias": 1440,
-        "hora": 60,    # 1 hora = 60 minutos
+        "hora": 60,     # 1 hora = 60 minutos
         "horas": 60,
     }
     # Regex para capturar número e unidade
-    match = re.match(r"(\d+)\s*(mês|meses|dia|dias|hora|horas)", tempo_desc.lower())
+    match = re.match(r"(\d+)\s*(ano|anos|mês|meses|dia|dias|hora|horas)", tempo_desc.lower())
     if match:
         quantidade = int(match.group(1))
         unidade = match.group(2)
