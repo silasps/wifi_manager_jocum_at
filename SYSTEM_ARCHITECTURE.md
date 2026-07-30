@@ -11,8 +11,11 @@ e após autenticação recebem acesso à internet com QoS diferenciado (gratuito
 - **Backend:** API Routes do Next.js (Vercel serverless)
 - **Banco de dados:** Supabase (PostgreSQL + Auth)
 - **Hardware:** UniFi Dream Machine SE (UDM)
-- **Agent:** Python 3.9 rodando na UDM (`/data/scripts/udm_agent.py`)
+- **Agent principal:** Python 3.9 rodando na UDM (`/data/scripts/udm_agent.py`) — captive portal, MAC auth, QoS, redirect server, re-autorização
+- **Agent de vouchers:** Python 3.9 rodando na UDM (`/data/scripts/create_voucher_auto.py`) — foco exclusivo em processar vouchers `pendente` do Supabase para o MongoDB da UDM
 - **MongoDB:** Interno da UDM (porta 27117, database `ace`) — controla autorizações WiFi
+
+> ⚠️ **Dois agentes paralelos:** `udm-agent.service` (`udm_agent.py`) e `create_voucher_auto.service` (`create_voucher_auto.py`) rodam simultaneamente. Ambos fazem polling de vouchers `pendente` no Supabase. O primeiro a pegar o registro "vence". Qualquer fix no processamento de vouchers deve ser aplicado em **ambos** os scripts.
 
 ---
 
@@ -376,6 +379,13 @@ com duração e quota customizadas, sem necessidade de pagamento.
 - **Backend:** `POST /api/admin/clients/[id]/voucher` exige `requireAdmin` (valida token + papel no banco)
 - Registro financeiro gerado com `valor_pago: 0` e `comprovante_pgto: "admin:Gratuito | atendimento pessoal"`
 
+### Excluir voucher individual
+- Botão 🗑 em cada voucher card na seção de Vouchers do admin
+- Abre modal de confirmação antes de deletar
+- **Backend:** `DELETE /api/admin/vouchers/[id]` — remove o registro da tabela `vouchers` no Supabase
+- **Efeito imediato:** remove o voucher da listagem sem reload da página (atualiza estado local)
+- ⚠️ Não remove a autorização do MongoDB da UDM — se o device já estava autorizado, continua com acesso até expirar. Para revogar o acesso junto, usar o botão "Desconectar" no admin.
+
 ---
 
 ## Tabelas Supabase
@@ -405,12 +415,12 @@ cd /data/scripts && python3 -u udm_agent.py
 
 O flag `-u` é obrigatório para log imediato (sem buffering). Sem ele, logs podem atrasar vários minutos.
 
-### Serviço systemd (`/etc/systemd/system/udm-agent.service`)
+### Serviços systemd
+
+#### `udm-agent.service` — Agent principal
 ```ini
 [Unit]
 Description=UDM Agent - Vouchers e Portal
-After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple
@@ -422,40 +432,54 @@ StandardError=append:/data/scripts/agent.log
 WorkingDirectory=/data/scripts
 ```
 
-```bash
-# Habilitar e iniciar o serviço
-systemctl enable udm-agent
-systemctl start udm-agent
-```
-
-**Log principal:** `/data/scripts/agent.log` (systemd captura stdout/stderr do processo).
+**Log:** `/data/scripts/agent.log` (stdout do processo, sem timestamp) + `/data/scripts/voucher.log` (via `log()` interno, com timestamp). O `voucher.log` acumula saída de TODOS os processos que já rodaram.
 
 **⚠️ Importante:** O systemd deve executar `start_agent.sh` (não `python3 udm_agent.py` diretamente).
 `start_agent.sh` exporta `SUPABASE_SERVICE_ROLE_KEY` — sem esse passo o agent inicia com a variável
 vazia e todas as chamadas ao Supabase retornam `401 No API key found`.
 
-### ⚠️ Deploy do agent NÃO é automático
+#### `create_voucher_auto.service` — Agent de vouchers
+```ini
+[Unit]
+Description=Criação automática de vouchers Supabase/UDM
 
-`git push` só atualiza o Vercel (frontend + API routes). O `scripts/udm_agent.py` do repositório é uma
-**cópia de referência** — o arquivo que roda de verdade fica em `/data/scripts/udm_agent.py` na própria
-UDM, e precisa ser copiado manualmente toda vez que houver mudança:
-
-```bash
-# 1. Backup do arquivo atual (por segurança)
-ssh root@10.70.0.1 "cp /data/scripts/udm_agent.py /data/scripts/udm_agent.py.bak.$(date +%Y%m%d%H%M%S)"
-
-# 2. Copiar a versão corrigida
-scp scripts/udm_agent.py root@10.70.0.1:/data/scripts/udm_agent.py
-
-# 3. Validar sintaxe e reiniciar
-ssh root@10.70.0.1 "python3 -m py_compile /data/scripts/udm_agent.py && systemctl restart udm-agent"
-
-# 4. Confirmar
-ssh root@10.70.0.1 "systemctl status udm-agent --no-pager -l | head -15"
+[Service]
+ExecStart=/usr/bin/python3 /data/scripts/create_voucher_auto.py
+Restart=always
 ```
 
-Esquecer esse passo é uma causa comum de "corrigi o bug mas continua acontecendo" — o fix existe no
-git mas o processo rodando na UDM ainda é a versão antiga.
+Script mais antigo, focado só em processar vouchers `pendente`. Roda em paralelo com `udm_agent.py`.
+Não tem redirect server nem funções de auth/QoS.
+
+```bash
+# Reiniciar ambos os serviços
+systemctl restart udm-agent
+systemctl restart create_voucher_auto
+```
+
+### ⚠️ Deploy dos agents NÃO é automático
+
+`git push` só atualiza o Vercel (frontend + API routes). Os scripts `udm_agent.py` e `create_voucher_auto.py`
+no repositório são **cópias de referência** — os arquivos que rodam de verdade ficam em `/data/scripts/` na
+UDM e precisam ser copiados manualmente toda vez que houver mudança nos dois:
+
+```bash
+# Copiar ambos os scripts para a UDM
+scp scripts/udm_agent.py root@10.70.0.1:/data/scripts/udm_agent.py
+scp scripts/create_voucher_auto.py root@10.70.0.1:/data/scripts/create_voucher_auto.py
+
+# Reiniciar ambos os serviços
+ssh root@10.70.0.1 "systemctl restart udm-agent && systemctl restart create_voucher_auto"
+
+# Confirmar
+ssh root@10.70.0.1 "systemctl status udm-agent --no-pager | head -5; systemctl status create_voucher_auto --no-pager | head -5"
+```
+
+**⚠️ Bug recorrente:** sempre que um fix de processamento de vouchers for feito em `udm_agent.py`,
+aplicar o mesmo fix em `create_voucher_auto.py` — ambos processam vouchers e o primeiro a pegar o
+registro "vence". Fix em apenas um script deixa o outro criando vouchers com dados errados.
+
+Esquecer o deploy é a causa mais comum de "corrigi o bug mas continua acontecendo".
 
 ### Verificação rápida
 ```bash
@@ -566,6 +590,23 @@ A função `aplicar_bloqueio_https()` existe no código mas **não é chamada** 
 Nova função `_reautorizar_macs_cliente(cliente_uid, tempo_minutos)`: chamada de dentro de `processar_vouchers()` sempre que um voucher **pago** (não gratuito, não `GUEST_USER_ID`) é processado. Busca os **5 MACs mais recentes** com `status="autorizado"` para o cliente no Supabase e os re-autoriza diretamente no MongoDB com o novo tempo. **Efeito prático:** o device volta a ter internet em até 60 segundos após o pagamento, sem precisar reconectar ou interagir com o captive portal.
 
 **Sem impacto em usuários ativos:** ambas as mudanças só afetam registros com `end < now` (já expirados) ou clientes que acabaram de pagar um novo voucher.
+
+### Voucher anual criado com ~60 minutos de validade em vez de 365 dias (RESOLVIDO 2026-07-30)
+
+**Sintoma:** Admin cria voucher "1 ano" para um cliente. O voucher aparece com validade de ~1 hora (ou 1 dia), não 365 dias.
+
+**Causa raiz (em camadas):**
+
+1. **`create_voucher_auto.py` sem suporte a "ano":** A função `converter_tempo_para_minutos()` desse script só reconhecia `mês/meses`, `dia/dias`, `hora/horas`. Para `tempo_desc = "1 ano"`, retornava `0` → fallback `60 min`. Como `create_voucher_auto.service` roda continuamente desde julho/2018 e era mais rápido no polling, processava o voucher antes de `udm_agent.py`.
+
+2. **`udm_agent.py` também sem suporte (antes do fix 00b3c5d):** Mesmo se processado por `udm_agent.py`, o resultado seria o mesmo — fallback de 60 min.
+
+3. **Restart sem SCP:** ao reiniciar o `udm_agent.py` via `pkill + nohup` (em vez de `systemctl restart`), o processo novo carrega o código do disco — mas se o SCP do fix e o restart aconteceram quase simultaneamente, o Python pode ter carregado o arquivo antigo (antes do SCP concluir). O arquivo em disco e o código em memória ficaram dessincronizados.
+
+**Fix aplicado (2026-07-30):**
+- Ambos os scripts receberam `"ano": 525600` e `"anos": 525600` na tabela `tempos`, e `ano|anos` adicionado ao regex
+- `create_voucher_auto.service` reiniciado com `systemctl restart create_voucher_auto`
+- **Regra aprendida:** fixes em processamento de vouchers devem ser aplicados em ambos os scripts
 
 ### Visitante free reconecta, vê "Conectado!" e cai de volta na tela inicial (RESOLVIDO 2026-07-30)
 
