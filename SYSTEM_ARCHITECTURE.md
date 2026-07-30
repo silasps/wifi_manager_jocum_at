@@ -165,6 +165,7 @@ Manter apenas: `ssl.gstatic.com`, `www.gstatic.com`, `fonts.gstatic.com`.
 - **Body:** `{ mac, telefone }`
 - **Fluxo:** Salva telefone em `visitantes_free`, cria voucher gratuito (se não existir), cria autorização de 1440 min (24h)
 - **Velocidade:** 123 Kbps (só mensagens de texto)
+- **Expiração:** antes de reusar uma autorização `status="autorizado"` existente, checa `created_at + minutos` — se já passou de 24h, marca como `"expirado"` e cria uma nova de verdade (ver RESOLVIDO 2026-07-30 abaixo)
 
 ### `POST /api/hotspot/login`
 - **Auth:** Nenhuma
@@ -565,6 +566,14 @@ A função `aplicar_bloqueio_https()` existe no código mas **não é chamada** 
 Nova função `_reautorizar_macs_cliente(cliente_uid, tempo_minutos)`: chamada de dentro de `processar_vouchers()` sempre que um voucher **pago** (não gratuito, não `GUEST_USER_ID`) é processado. Busca os **5 MACs mais recentes** com `status="autorizado"` para o cliente no Supabase e os re-autoriza diretamente no MongoDB com o novo tempo. **Efeito prático:** o device volta a ter internet em até 60 segundos após o pagamento, sem precisar reconectar ou interagir com o captive portal.
 
 **Sem impacto em usuários ativos:** ambas as mudanças só afetam registros com `end < now` (já expirados) ou clientes que acabaram de pagar um novo voucher.
+
+### Visitante free reconecta, vê "Conectado!" e cai de volta na tela inicial (RESOLVIDO 2026-07-30)
+
+**Sintoma:** Um visitante que já tinha usado o acesso gratuito antes reconecta ao WiFi com o mesmo celular. O app mostra a tela de sucesso ("Você está conectado!"), mas segundos depois volta para a tela inicial do portal (`/hotspot`), em loop.
+
+**Causa raiz:** `POST /api/hotspot/free-access` checava só `status = "autorizado"` na tabela `autorizacoes` para decidir se o MAC já tinha acesso — sem considerar que o acesso free vale só 1440 min (24h). Passadas as 24h, `_limpar_bypass_expirados()` já tinha removido de verdade o registro no MongoDB e a regra de bypass no iptables (mesmo mecanismo do bug acima), mas a linha no Supabase nunca era atualizada e ficava `"autorizado"` para sempre. Resultado: o frontend confiava no registro velho e mostrava sucesso, mas a rede de fato bloqueava o device — o próximo probe de conectividade caía de novo no redirect do portal cativo.
+
+**Fix aplicado:** `free-access/route.ts` agora calcula `Date.now() - created_at` e compara com `minutos` antes de aceitar um registro `"autorizado"` como válido. Se expirou, marca como `"expirado"` e segue o fluxo normal, criando uma autorização `"pendente"` nova — que o agent processa e libera o MAC de verdade (mesmo padrão de checagem de idade já usado nos TV PINs, ver `tv-pin/route.ts`).
 
 ### Após atualização de firmware da UDM
 Verificar: agent rodando, serviço systemd ativo (`systemctl status udm-agent`), regras iptables no lugar, `redirect_https: false`.
