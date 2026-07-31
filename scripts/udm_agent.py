@@ -595,7 +595,7 @@ def _reautorizar_macs_cliente(cliente_uid, tempo_minutos):
     try:
         path = (f"/rest/v1/autorizacoes?select=mac_address"
                 f"&cliente_id=eq.{urllib.parse.quote(str(cliente_uid))}"
-                f"&status=eq.autorizado&order=id.desc&limit=5")
+                f"&status=eq.autorizado&order=created_at.desc&limit=5")
         conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
         conn.request("GET", path, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
         res = conn.getresponse()

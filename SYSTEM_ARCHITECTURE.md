@@ -591,6 +591,24 @@ Nova função `_reautorizar_macs_cliente(cliente_uid, tempo_minutos)`: chamada d
 
 **Sem impacto em usuários ativos:** ambas as mudanças só afetam registros com `end < now` (já expirados) ou clientes que acabaram de pagar um novo voucher.
 
+### `_reautorizar_macs_cliente` ordenava por `id` (UUID) em vez de `created_at` — reautorização pós-voucher não pegava o MAC certo (RESOLVIDO 2026-07-31)
+
+**Sintoma:** Cliente com voucher vencido gera um voucher novo (pago ou admin `Gratuito`), a tela fica em loop infinito ("Reconectando à rede…" / redireciona pro `/hotspot` de novo sem parar) mesmo com o app mostrando voucher ativo. Resolve sozinho se o usuário trocar de rede no celular e voltar.
+
+**Causa raiz:** A função `_reautorizar_macs_cliente()` (chamada de dentro de `processar_vouchers()` — ver seção "Device preso... RESOLVIDO 2026-07-29" acima) busca os "5 MACs mais recentes" do cliente com:
+```
+/rest/v1/autorizacoes?...&status=eq.autorizado&order=id.desc&limit=5
+```
+O campo `id` da tabela `autorizacoes` é um **UUID aleatório**, não sequencial. Ordenar por `id.desc` não traz os registros mais recentes — traz uma amostra essencialmente aleatória do histórico do cliente. Para clientes com vários dispositivos/dias de uso, o MAC atual (o mais recente de verdade) frequentemente não caía nos "5 sorteados", então nunca era re-autorizado no MongoDB. O Supabase mostrava voucher válido e `autorizacoes.status = "autorizado"` (registro antigo, reaproveitado por `session/route.ts`), mas o MongoDB nunca recebia o novo `end`, e a rede continuava bloqueando o device de verdade — daí o loop.
+
+Isso também explica por que trocar de rede resolvia: forçava uma probe HTTP nova → redirect real pelo captive portal (`/hotspot?id=<mac>`) → `GET /api/hotspot/session?mac=` autoriza automaticamente. Esse caminho não passa pela função com bug.
+
+**Fix aplicado:** trocado `order=id.desc` para `order=created_at.desc` em `_reautorizar_macs_cliente()` (`scripts/udm_agent.py`). Só existe em `udm_agent.py` — `create_voucher_auto.py` não tem essa função, não precisou de fix duplicado.
+
+**Testado em produção (2026-07-31):** query corrigida confirmada trazendo os 5 MACs corretos em ordem cronológica real (mais recente primeiro). Função executada manualmente para o cliente afetado — MAC re-autorizado no MongoDB com sucesso (`db.guest.find` confirmou `end` ~1 ano à frente, QoS 50000 Kbps). Deploy feito via SCP + `systemctl restart udm-agent`, serviço voltou a processar normalmente (log sem erros novos).
+
+**Alcance do bug:** como essa função roda toda vez que um voucher pago/admin é processado (não só nesse incidente), é provável que tenha deixado outros clientes com histórico de múltiplos dispositivos no mesmo loop silenciosamente antes desse fix.
+
 ### Voucher anual criado com ~60 minutos de validade em vez de 365 dias (RESOLVIDO 2026-07-30)
 
 **Sintoma:** Admin cria voucher "1 ano" para um cliente. O voucher aparece com validade de ~1 hora (ou 1 dia), não 365 dias.
