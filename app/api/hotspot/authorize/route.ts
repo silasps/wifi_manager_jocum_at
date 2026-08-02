@@ -58,14 +58,22 @@ export async function POST(request: Request) {
   // Verifica se já existe autorização ativa para este MAC
   const { data: existing } = await admin
     .from("autorizacoes")
-    .select("id, status")
+    .select("id, status, minutos, created_at")
     .eq("cliente_id", user.id)
     .eq("mac_address", mac)
     .eq("status", "autorizado")
     .limit(1);
 
   if (existing && existing.length > 0) {
-    return NextResponse.json({ status: "autorizado", id: existing[0].id });
+    const auth = existing[0];
+    const ageMinutes = (Date.now() - new Date(auth.created_at).getTime()) / 60000;
+    if (ageMinutes < auth.minutos) {
+      return NextResponse.json({ status: "autorizado", id: auth.id });
+    }
+    // Registro velho — o agent já expirou de verdade no MongoDB (mesma checagem
+    // de idade usada em free-access/route.ts e session/route.ts). Segue o fluxo
+    // normal abaixo para criar uma autorização nova.
+    await admin.from("autorizacoes").update({ status: "expirado" }).eq("id", auth.id);
   }
 
   // Cria nova autorização pendente

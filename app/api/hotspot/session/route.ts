@@ -68,17 +68,26 @@ export async function GET(request: Request) {
     let auth_id: string | undefined;
 
     if (mac && MAC_REGEX.test(mac)) {
+      type ExistingAuthRow = { id: string; status: string; minutos: number; created_at: string };
       const { data: existing } = await admin
         .from("autorizacoes")
-        .select("id, status")
+        .select("id, status, minutos, created_at")
         .eq("cliente_id", user.id)
         .eq("mac_address", mac)
         .in("status", ["autorizado", "pendente"])
-        .order("status", { ascending: true }) // "autorizado" antes de "pendente"
-        .limit(1);
+        .order("status", { ascending: true }) as { data: ExistingAuthRow[] | null }; // "autorizado" antes de "pendente"
 
-      if (existing && existing.length > 0) {
-        auth_id = existing[0].id;
+      // Um registro "autorizado" só é válido se created_at + minutos ainda não passou —
+      // senão é um registro velho que o agent já expirou de verdade no MongoDB
+      // (mesma checagem de idade usada em free-access/route.ts e tv-pin/route.ts).
+      const valid = existing?.find((row) => {
+        if (row.status === "pendente") return true;
+        const ageMinutes = (Date.now() - new Date(row.created_at).getTime()) / 60000;
+        return ageMinutes < row.minutos;
+      });
+
+      if (valid) {
+        auth_id = valid.id;
       } else {
         const isIlimitado = active.tempo_desc?.toLowerCase() === "ilimitado";
         const minutosRestantes = isIlimitado
