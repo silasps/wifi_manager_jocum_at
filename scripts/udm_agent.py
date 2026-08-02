@@ -761,13 +761,48 @@ def _obter_dispositivos_nao_autorizados():
     return dispositivos
 
 
+def _limpar_dispositivos_detectados_obsoletos(atuais):
+    """Remove do Supabase os MACs que não estão mais na lista 'detectados não autorizados' —
+    ou porque saíram da rede (sem last_seen recente), ou porque já foram autorizados por
+    outro caminho (voucher, portal normal, etc). Nunca mexe em dispositivos_confiaveis:
+    isso é só a lista de triagem, o histórico de autorizados fica intacto."""
+    try:
+        conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
+        conn.request(
+            "GET", "/rest/v1/dispositivos_detectados?select=mac_address",
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
+        )
+        res = conn.getresponse()
+        data = res.read().decode()
+        conn.close()
+        if res.status != 200:
+            return
+        registrados = {row.get("mac_address") for row in json.loads(data) if row.get("mac_address")}
+    except Exception as e:
+        log(f"⚠️ Erro ao ler dispositivos_detectados para limpeza: {e}")
+        return
+
+    obsoletos = registrados - {d["mac"] for d in atuais}
+    if not obsoletos:
+        return
+
+    query = urllib.parse.urlencode({"mac_address": f"in.({','.join(obsoletos)})"})
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
+    conn.request(
+        "DELETE", f"/rest/v1/dispositivos_detectados?{query}",
+        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
+    )
+    conn.getresponse().read()
+    conn.close()
+    log(f"🧹 {len(obsoletos)} dispositivo(s) removido(s) da lista de detectados (autorizado ou offline)")
+
+
 def sincronizar_dispositivos_detectados():
     """Envia ao Supabase os MACs vistos na rede guest ainda não autorizados,
-    para o admin identificar e liberar manualmente (câmera, Echo Dot etc.)."""
+    para o admin identificar e liberar manualmente (câmera, Echo Dot etc.).
+    Também limpa quem saiu da rede ou já foi autorizado — ver _limpar_dispositivos_detectados_obsoletos."""
     try:
         dispositivos = _obter_dispositivos_nao_autorizados()
-        if not dispositivos:
-            return
         for d in dispositivos:
             try:
                 last_seen_iso = datetime.datetime.utcfromtimestamp(int(d["last_seen"])).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -790,6 +825,7 @@ def sincronizar_dispositivos_detectados():
             )
             conn.getresponse().read()
             conn.close()
+        _limpar_dispositivos_detectados_obsoletos(dispositivos)
     except Exception as e:
         log(f"⚠️ Erro sincronizar_dispositivos_detectados: {e}")
 
