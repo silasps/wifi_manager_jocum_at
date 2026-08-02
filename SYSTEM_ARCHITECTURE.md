@@ -261,6 +261,8 @@ Manter apenas: `ssl.gstatic.com`, `www.gstatic.com`, `fonts.gstatic.com`.
 | `garantir_redirect_porta_80()` | 60s | Garante regras iptables no lugar |
 | `_limpar_bypass_expirados()` | 60s | Remove bypass MAC expirados (iptables) **e** remove do MongoDB registros expirados (`end < now, authorized_by="api"`) para forçar re-detecção do captive portal |
 | `_reautorizar_macs_cliente()` | Sob demanda | Re-autoriza no MongoDB os **5 MACs mais recentes** de um cliente quando novo voucher pago é processado |
+| `processar_dispositivos_confiaveis()` | 60s | Autoriza (10 anos, sem QoS) todo MAC em `dispositivos_confiaveis` — ver seção "Dispositivos IoT" |
+| `sincronizar_dispositivos_detectados()` | 60s | Sincroniza em `dispositivos_detectados` os MACs vistos na rede guest sem autorização ativa — ver seção "Dispositivos IoT" |
 
 ### Servidor Redirect (thread daemon, porta 8881)
 - Multi-threaded (`ThreadingMixIn`) — não trava com muitos requests
@@ -401,6 +403,12 @@ Autorizações de MAC. Campos: `id`, `cliente_id`, `mac_address`, `minutos`, `st
 
 ### `visitantes_free`
 Visitantes anônimos (acesso gratuito). Campos: `id`, `mac_address`, `telefone`, `criado_em`, `migrou_pago`
+
+### `dispositivos_detectados`
+MACs vistos na rede guest sem autorização ativa (sincronizado pelo agent, ver "Dispositivos IoT"). Campos: `mac_address` (PK), `hostname`, `last_seen`, `updated_at`
+
+### `dispositivos_confiaveis`
+Allowlist permanente de dispositivos IoT (ver "Dispositivos IoT"). Campos: `id`, `mac_address` (unique), `nome`, `criado_por`, `criado_em`
 
 ---
 
@@ -784,3 +792,59 @@ O webOS usa dois mecanismos distintos:
 Netflix tem suporte nativo a redes de hotspot/hotel — ignora o estado "captive portal ativo".
 YouTube, Amazon Prime e Disney+ não têm esse bypass: se o SO marcou "captive portal", os apps bloqueiam.
 Além disso, apps fazem chamadas HTTP a APIs da Samsung (Smart Hub, `appboot`) e CDNs — sem proxy, o agent retornava HTML em vez da resposta real → apps quebravam mesmo com TV mostrando "conectado".
+
+---
+
+## Dispositivos IoT — Câmeras, Echo Dot, Lâmpadas (implementado 2026-08-01)
+
+### Por que esses dispositivos são diferentes de TVs
+
+Smart TVs pelo menos abrem um browser embutido (CNA) quando detectam captive portal — dá pra
+mostrar o fluxo de PIN (ver seção "Smart TVs" acima). Câmeras de segurança, Echo Dot, lâmpadas
+smart etc. **não têm navegador nenhum**: nunca fazem nenhuma requisição HTTP interativa, então
+nunca há como servir HTML pra eles. Esses dispositivos precisam ser autorizados **sem** passar
+pelo portal.
+
+### Fingerprint nativo da UDM não é confiável pra auto-detectar o tipo de dispositivo
+
+A UDM já tenta identificar cada cliente (câmera, telefone, etc.) via motor de fingerprint próprio
+da Ubiquiti — campos `dev_cat`/`dev_family`/`confidence` em `ace.user` (MongoDB), regras em
+`/mnt/.rofs/usr/share/dpi/fingerprinting/rules.json`. Testado ao vivo em produção (2026-08-01):
+celulares reais recebem `confidence` tão baixo quanto 1-20/100 e caem na mesma categoria genérica
+(`dev_cat: 44` = "telefone") que dispositivos IoT desconhecidos — **não dá pra distinguir "câmera
+genérica" de "Android que ainda não mandou sinal suficiente" só por categoria/confiança.** Por
+isso a solução abaixo não tenta auto-classificar o tipo de aparelho — é curadoria manual do admin
+sobre uma lista de "visto na rede, ainda sem autorização".
+
+### Fluxo implementado
+
+1. **`sincronizar_dispositivos_detectados()`** (agent, a cada 60s): consulta `ace.user` no MongoDB
+   local da UDM filtrando por `last_connection_network_id = GUEST_NETWORK_ID` (networkconf_id da
+   rede guest, `6834b087b243651f00c8dcdf` — subnet `10.70.0.1/22`, cobre as SSIDs `.UofN JOCUM AT`
+   e `.UofN Free WiFi`), `is_wired: false`, vistos nos últimos 30 min e **sem** guest record ativo
+   em `db.guest`. Faz upsert desses MACs (+ hostname, se a UDM souber) na tabela Supabase
+   `dispositivos_detectados`.
+2. Admin abre `/admin/dispositivos` (aba nova ao lado de Clientes/Vouchers/Financeiro) → seção
+   "Detectados" mostra esses MACs. Aparelhos genéricos (câmera chinesa, plug Tuya) tipicamente
+   aparecem **sem hostname** — é o sinal prático de "provavelmente não é celular de visitante".
+3. Admin dá um nome (ex: "Câmera portaria") e clica em "Confiar permanentemente" →
+   `POST /api/admin/dispositivos` grava em `dispositivos_confiaveis`.
+4. **`processar_dispositivos_confiaveis()`** (agent, a cada 60s): lê `dispositivos_confiaveis` e
+   garante, via `_autorizar_via_mongo()`, guest record com **10 anos de validade** (`DEZ_ANOS_MIN`)
+   e **sem limite de QoS** (mesmo tratamento de plano premium) — idempotente, roda todo ciclo sem
+   efeito colateral.
+5. Pra remover: botão "Remover" na seção "Confiáveis" → `DELETE /api/admin/dispositivos/[mac]`
+   apaga de `dispositivos_confiaveis` **e** insere um registro `status: "revogado"` em
+   `autorizacoes` — reaproveita o `processar_revogacoes()`/`kick_mac_unifi()` que já existia,
+   sem precisar de nenhuma função nova no agent pra derrubar o dispositivo de verdade.
+
+### Tabelas Supabase (RLS ligado, sem policies — só service role acessa, ver seção "Tabelas Supabase")
+- `dispositivos_detectados` — `mac_address` (PK), `hostname`, `last_seen`, `updated_at`
+- `dispositivos_confiaveis` — `id`, `mac_address` (unique), `nome`, `criado_por`, `criado_em`
+
+### Endpoints
+- `GET /api/admin/dispositivos` — lista `detectados` (exclui MACs já confiáveis) + `confiaveis`
+- `POST /api/admin/dispositivos` — `{ mac_address, nome }` → upsert em `dispositivos_confiaveis`
+- `DELETE /api/admin/dispositivos/[mac]` — remove de `dispositivos_confiaveis` + revoga via `autorizacoes`
+
+Todos exigem `requireAdmin` (mesmo guard das outras rotas `/api/admin/*`).
