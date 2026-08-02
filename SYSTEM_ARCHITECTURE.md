@@ -609,6 +609,18 @@ Isso também explica por que trocar de rede resolvia: forçava uma probe HTTP no
 
 **Alcance do bug:** como essa função roda toda vez que um voucher pago/admin é processado (não só nesse incidente), é provável que tenha deixado outros clientes com histórico de múltiplos dispositivos no mesmo loop silenciosamente antes desse fix.
 
+### `session/route.ts` e `authorize/route.ts` reaproveitavam autorização "autorizado" já vencida (RESOLVIDO 2026-08-01)
+
+**Sintoma:** Dispositivo com sessão logada e voucher ativo entra na `.UofN JOCUM AT` e fica preso em loop no captive portal (mostra "conectado"/spinner infinito), mesmo com voucher válido. Reproduzido em produção: MacBook do cliente (`06:9c:96:37:85:93`) tentando reconectar.
+
+**Causa raiz:** Ao checar se um MAC já tinha autorização, `session/route.ts` (`.in("status", ["autorizado","pendente"])`) e `authorize/route.ts` (`.eq("status","autorizado")`) confiavam cegamente no texto do status — sem checar se `created_at + minutos` já tinha passado. Um registro de dias atrás (ex: `06:9c:96:37:85:93`, criado 2026-07-30 21:30, `minutos: 972`) fica com status `"autorizado"` no Supabase pra sempre, mesmo expirado de verdade há muito tempo (o agent já removeu o bypass real no MongoDB via `_limpar_bypass_expirados()`). O app achava esse registro velho, devolvia "autorizado" pro frontend sem nunca criar uma autorização nova — e como a rede de fato bloqueava o MAC, o dispositivo ficava preso em loop.
+
+**Mesma classe de bug já corrigida em `free-access/route.ts` (RESOLVIDO 2026-07-30, ver abaixo) e usada em `tv-pin/route.ts`** — só nunca tinha sido replicada nos dois caminhos principais de reconexão (`session` e `authorize`), que é por onde passa a maioria dos devices.
+
+**Fix aplicado:** os dois arquivos agora calculam `(Date.now() - created_at) / 60000 < minutos` antes de reaproveitar um registro `"autorizado"`. Se vencido, o registro é ignorado (e em `authorize/route.ts`, marcado `status: "expirado"`) e o fluxo segue normalmente criando uma autorização `"pendente"` nova, que o agent processa de verdade.
+
+**Testado em produção (2026-08-01):** login real via `POST /api/hotspot/login` com a conta afetada + chamadas diretas a `GET /api/hotspot/session?mac=06:9c:96:37:85:93` e `POST /api/hotspot/authorize` contra o registro de 30/07 (`d18c1c78...`, já vencido há mais de 2 dias). Confirmado: ambos os endpoints ignoraram o registro velho e criaram autorizações novas (`59ce592b...`, `8cc04447...`); o registro antigo foi marcado `"expirado"` pelo `authorize/route.ts`.
+
 ### Voucher anual criado com ~60 minutos de validade em vez de 365 dias (RESOLVIDO 2026-07-30)
 
 **Sintoma:** Admin cria voucher "1 ano" para um cliente. O voucher aparece com validade de ~1 hora (ou 1 dia), não 365 dias.
