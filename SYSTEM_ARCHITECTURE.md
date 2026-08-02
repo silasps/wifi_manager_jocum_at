@@ -823,7 +823,11 @@ sobre uma lista de "visto na rede, ainda sem autorização".
    rede guest, `6834b087b243651f00c8dcdf` — subnet `10.70.0.1/22`, cobre as SSIDs `.UofN JOCUM AT`
    e `.UofN Free WiFi`), `is_wired: false`, vistos nos últimos 30 min e **sem** guest record ativo
    em `db.guest`. Faz upsert desses MACs (+ hostname, se a UDM souber) na tabela Supabase
-   `dispositivos_detectados`.
+   `dispositivos_detectados`, e remove da tabela (`_limpar_dispositivos_detectados_obsoletos()`)
+   qualquer MAC registrado que não apareça mais nesse snapshot — ou porque saiu da rede (sem
+   `last_seen` recente), ou porque já foi autorizado por outro caminho (voucher normal, ou virou
+   confiável). **`dispositivos_detectados` é só uma lista de triagem em quase-tempo-real (~60s de
+   defasagem)** — não é histórico. Quem precisa persistir é o admin, marcando como confiável.
 2. Admin abre `/admin/dispositivos` (aba nova ao lado de Clientes/Vouchers/Financeiro) → seção
    "Detectados" mostra esses MACs. Aparelhos genéricos (câmera chinesa, plug Tuya) tipicamente
    aparecem **sem hostname** — é o sinal prático de "provavelmente não é celular de visitante".
