@@ -599,6 +599,7 @@ export default function AdminPage() {
           <span className="admin-nav-tab active">Clientes</span>
           <a href="/admin/vouchers" className="admin-nav-tab">Vouchers</a>
           <a href="/admin/financeiro" className="admin-nav-tab">Financeiro</a>
+          <a href="/admin/dispositivos" className="admin-nav-tab">Dispositivos</a>
         </div>
       </header>
 

@@ -175,6 +175,7 @@ export default function FinanceiroPage() {
           <a href="/admin" className="admin-nav-tab">Clientes</a>
           <a href="/admin/vouchers" className="admin-nav-tab">Vouchers</a>
           <span className="admin-nav-tab active">Financeiro</span>
+          <a href="/admin/dispositivos" className="admin-nav-tab">Dispositivos</a>
         </div>
       </header>
 

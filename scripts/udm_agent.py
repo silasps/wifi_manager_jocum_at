@@ -27,6 +27,15 @@ VELOCIDADE_PAGO_KBPS = 50000   # 50 Mbps — planos pagos
 VELOCIDADE_FREE_KBPS = 123     # 123 Kbps — plano gratuito
 
 # ===============================
+# DISPOSITIVOS CONFIÁVEIS (IoT) — câmeras, Echo Dot, lâmpadas etc.
+# ===============================
+# networkconf_id da rede guest (".UofN JOCUM AT" / ".UofN Free WiFi", subnet 10.70.0.1/22).
+# Descoberto via: mongo ace --eval 'db.wlanconf.find({},{name:1,networkconf_id:1})'
+GUEST_NETWORK_ID = "6834b087b243651f00c8dcdf"
+DEZ_ANOS_MIN = 10 * 365 * 24 * 60
+DISPOSITIVOS_JANELA_SEGUNDOS = 1800  # só considera "detectado" quem apareceu nos últimos 30 min
+
+# ===============================
 # CONFIGURAÇÕES UNIFI - API KEY
 # ===============================
 # Recomendo depois trocar esta chave e usar variável de ambiente:
@@ -719,6 +728,106 @@ def processar_revogacoes():
         log(f"❌ Erro em processar_revogacoes: {e}")
 
 # ===============================
+# DISPOSITIVOS CONFIÁVEIS (IoT)
+# ===============================
+def _obter_dispositivos_nao_autorizados():
+    """Lista MACs vistos recentemente na rede guest que ainda não têm guest record ativo.
+    Usa o fingerprint da própria UDM (ace.user) — não depende do device passar pelo portal."""
+    agora = int(time.time())
+    limite = agora - DISPOSITIVOS_JANELA_SEGUNDOS
+    script = (
+        f'var authorized={{}}; '
+        f'db.guest.find({{end:{{$gt:NumberLong({agora})}}}},{{mac:1,_id:0}}).forEach(function(g){{authorized[g.mac]=true}}); '
+        f'db.user.find({{last_connection_network_id:"{GUEST_NETWORK_ID}", is_wired:false, '
+        f'last_seen:{{$gt:NumberLong({limite})}}}}).forEach(function(d){{'
+        f'if(!authorized[d.mac]){{print(d.mac + "|" + (d.hostname||"") + "|" + d.last_seen)}}'
+        f'}});'
+    )
+    result = subprocess.run(
+        ["mongo", "--port", "27117", "ace", "--quiet", "--eval", script],
+        capture_output=True, text=True, timeout=10
+    )
+    dispositivos = []
+    if result.returncode != 0:
+        return dispositivos
+    for line in result.stdout.strip().split('\n'):
+        line = line.strip()
+        if not line or line.count('|') != 2:
+            continue
+        mac, hostname, last_seen = line.split('|')
+        if ':' not in mac:
+            continue
+        dispositivos.append({"mac": mac, "hostname": hostname, "last_seen": last_seen})
+    return dispositivos
+
+
+def sincronizar_dispositivos_detectados():
+    """Envia ao Supabase os MACs vistos na rede guest ainda não autorizados,
+    para o admin identificar e liberar manualmente (câmera, Echo Dot etc.)."""
+    try:
+        dispositivos = _obter_dispositivos_nao_autorizados()
+        if not dispositivos:
+            return
+        for d in dispositivos:
+            try:
+                last_seen_iso = datetime.datetime.utcfromtimestamp(int(d["last_seen"])).strftime("%Y-%m-%dT%H:%M:%SZ")
+            except (ValueError, OSError):
+                continue
+            payload = json.dumps({
+                "mac_address": d["mac"],
+                "hostname": d["hostname"] or None,
+                "last_seen": last_seen_iso,
+                "updated_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
+            conn.request(
+                "POST", "/rest/v1/dispositivos_detectados?on_conflict=mac_address",
+                body=payload,
+                headers={
+                    "apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates",
+                },
+            )
+            conn.getresponse().read()
+            conn.close()
+    except Exception as e:
+        log(f"⚠️ Erro sincronizar_dispositivos_detectados: {e}")
+
+
+def buscar_dispositivos_confiaveis():
+    path = "/rest/v1/dispositivos_confiaveis?select=mac_address,nome"
+    conn = http.client.HTTPSConnection(SUPABASE_URL, 443, context=ssl._create_unverified_context(), timeout=10)
+    conn.request("GET", path, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
+    res = conn.getresponse()
+    data = res.read().decode()
+    conn.close()
+    if res.status != 200:
+        raise Exception(f"Erro Supabase GET dispositivos_confiaveis: {res.status} - {data}")
+    return json.loads(data)
+
+
+def processar_dispositivos_confiaveis():
+    """Mantém sempre autorizados (10 anos, sem limite de QoS) os MACs que o admin
+    marcou como confiáveis — câmeras, Echo Dot, lâmpadas etc. que nunca passam pelo portal."""
+    try:
+        dispositivos = buscar_dispositivos_confiaveis()
+        if not dispositivos:
+            return
+        for d in dispositivos:
+            mac = d.get("mac_address")
+            if not mac:
+                continue
+            try:
+                mac_norm = _normalizar_mac(mac).lower()
+                _garantir_guest_record(mac_norm)
+                _autorizar_via_mongo(mac_norm, DEZ_ANOS_MIN)
+                _mac_auth_cache.pop(mac_norm, None)
+            except Exception as e:
+                log(f"⚠️ Erro ao autorizar dispositivo confiável {mac}: {e}")
+    except Exception as e:
+        log(f"⚠️ processar_dispositivos_confiaveis: {e}")
+
+# ===============================
 # SERVIDOR DE REDIRECIONAMENTO
 # ===============================
 def get_mac_from_ip(client_ip, retries=3, delay=0.3):
@@ -1374,5 +1483,7 @@ if __name__ == "__main__":
             aplicar_walled_garden()
             garantir_redirect_porta_80()
             _limpar_bypass_expirados()
+            processar_dispositivos_confiaveis()
+            sincronizar_dispositivos_detectados()
         _ciclo += 1
         time.sleep(5)
